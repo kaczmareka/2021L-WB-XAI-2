@@ -3,6 +3,9 @@
 
 library(OpenML)
 library(mlr)
+#library(mlr3)
+#library(mlr3learners)
+#library(mlr3measures)
 
 set.seed(1)
 
@@ -27,7 +30,7 @@ getHyperPars(classif_lrn)
 
 # audyt modelu
 cv <- makeResampleDesc("CV", iters = 7)
-r <- resample(classif_lrn, classif_task, cv, measures = list(auc), models = TRUE)
+r <- resample(classif_lrn, classif_task, cv, measures = list(auc, mmce), models = TRUE)
 r$models
 AUC <- r$aggr
 AUC
@@ -38,7 +41,8 @@ listMeasures(obj = "classif")
 
 ### Zadanie 1
 
-# Uzywajac pakietu OpenML zaladuj dowolny zbior danych (zalecany projektowy je¿eli jest dostepny) oraz stworz dowolny model nastepnie poddajac go audytowi
+# Uzywajac pakietu OpenML zaladuj dowolny zbior danych (zalecany projektowy je¿eli jest dostepny) oraz
+# stworz audyt dowolnego modelu
 # Protip: Skopiuj kod powyzej i go przerob
 
 
