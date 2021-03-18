@@ -14,14 +14,13 @@ model <- lm(y~., df)
 model
 summary(model)
 
-new <- data.frame(x1 =1, x2 = 2, x3 = 3)
-
+new <- data.frame(x1 = 1, x2 = 2, x3 = 3)
 
 predict(model, new)
 
-pred <- predict(model)
+pred <- predict(model, df)
 
-(MSE <- sum((y - pred)^2)/n)
+(MSE <- mean((y - pred)^2))
 
 library(rpart)
 
@@ -31,7 +30,7 @@ summary(tree)
 library(rpart.plot)
 rpart.plot(tree)
 
-pred_tree <- predict(tree)
+pred_tree <- predict(tree, df)
 (MSE <- sum((y - pred_tree)^2)/n)
 
 
@@ -69,7 +68,9 @@ class_glm <- ifelse(pred_glm > 0.5, "Yes", "No")
 
 Acc_glm = sum(class_glm == Pima.te$type) / nrow(Pima.te)
 Acc_glm
-
+roc_obj_glm <- roc(Pima.te$type, pred_glm)
+plot(roc_obj_glm)
+auc(roc_obj_glm)
 
 library(e1071)
 model_svm <- svm(type~., Pima.te)
