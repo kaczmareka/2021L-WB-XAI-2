@@ -20,10 +20,11 @@ library(DALEX)
 library(DALEXtra)
 
 explainer <- explain(model = model,
-                     data = titanic_imputed,
+                     data = titanic_imputed[,-8],
                      y = titanic_imputed$survived) # WAZNE: to musi byc wartosc numerczna dla binarnej kalsyfikacji
 
 # Jezeli verbose = TRUE to otrzymamy podsumowanie naszego modelu
+
 # Preparation of a new explainer is initiated
 # -> model label       :  ranger  (  default  )
 # -> data              :  2207  rows  8  cols 
@@ -57,7 +58,8 @@ explainer_mlr <- explain(model = model_mlr,
 
 ### Break Down ###
 
-pp_ranger_bd_1 <- predict_parts(explainer, new_observation = titanic_imputed[1,])
+pp_ranger_bd_1 <- predict_parts(explainer, new_observation = titanic_imputed[1,], type = "break_down",
+                                order = c("gender", "age", "class", "embarked", "fare", "sibsp", "parch"))
 plot(pp_ranger_bd_1)
 
 pp_ranger_bd_2 <- predict_parts(explainer, new_observation = titanic_imputed[13,])
