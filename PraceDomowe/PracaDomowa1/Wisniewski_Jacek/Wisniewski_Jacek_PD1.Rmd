@@ -1,0 +1,79 @@
+---
+title: "Praca domowa 1"
+author: "Jacek Wiśniewski"
+date: "24/03/2021"
+output: html_document
+---
+
+### Wstęp
+
+W tej pracy stworzę model predykcyjny do przewidywania ceny telefonu, który następnie przeanalizuję korzystając z wykresów Break Down profile. Skupię się również na analizie działania wykresów Break Down.
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+library(mlr)
+library(DALEX)
+library(DALEXtra)
+```
+
+### Telefony którymi się będę zajmował
+
+```{r}
+data <- read.csv("./phones.csv")
+data <- na.omit(data)
+knitr::kable(data[c(1, 7, 3),], row.names = FALSE)
+```
+
+```{r, include=FALSE}
+task <- makeRegrTask(data = data[,-c(1, 2)], target = "price")
+learner <- makeLearner("regr.gbm")
+model <- train(learner, task)
+
+explainer <- explain(model = model,
+                     data = data[,-c(1, 2, 11)],
+                     y = data$price)
+```
+
+### Przewidywana cena pierwszego telefonu
+
+```{r}
+knitr::kable(predict(explainer, data[1, ]), align = 'l', col.names = '')
+```
+
+### Wykres Break Down dla pierwszego telefonu
+
+```{r, fig.height=10, fig.width=15, out.width='80%'}
+pred1 <- predict_parts(explainer, new_observation = data[1,])
+plot(pred1) # back_camera. ram_gb
+```
+
+### Wykres Break Down dla drugiego telefonu
+
+```{r, fig.height=10, fig.width=15, out.width='80%'}
+pred7 <- predict_parts(explainer, new_observation = data[7,])
+plot(pred7) # wudth_px, flash_gb
+```
+
+Na wykresach możemy zaobserwować, że na predykcję ceny pierwszego telefonu znacząco wpłynęły zmienne back_camera_mpix oraz ram_gb, za to na predykcję telefonu drugiego najmocniej wpłynęły zmienne width_px i flash_gb.
+
+### Wykres Break Down dla trzeciego telefonu
+
+```{r, fig.height=10, fig.width=15, out.width='80%'}
+pred3 <- predict_parts(explainer, new_observation = data[3,])
+plot(pred3)
+```
+
+Porównując wykresy drugiego i trzeciego telefonu możemy zauważyć, że zmienna flash_gb w obu przypadkach była istotna dla ostatecznego wyniku predykcji. Różnica polega na tym, że w przypadku drugiego telefonu ta zmienna obniżyła ostateczną cenę, a w przypadku trzeciego telefonu podwyższyła cenę.
+
+### Wnioski
+
+Jak widzimy wykresy break down różnią się od siebie, zarówno jeśli chodzi o dobór najistotniejszych zmiennych, jak i ich wpływ na wynik. Najważniejszą informacją, która częściowo tłumaczy to zjawisko, jest fakt, że każdy z tych wykresów był tworzony niezależnie dla pojedynczych obserwacji o różnych parametrach.
+
+
+Dla obserwacji ze skrajną wartością parametru ram_gb, ta zmienna może być bardziej istotna dla końcowego wyniku, niż dla obserwacji posiadającej wartość ram_gb w okolicy średniej.
+
+
+Dodatkowo, jeżeli wartość parametru ram_gb będzie relatywnie duża, to wpływ tej zmiennej na wynik może być dodatni. Jeżeli wartość tego parametru będzie mała, to jej wpływ na wynik może uledz zmienie.
+
+
+Powyższe przykłady są jedynie uproszczeniami, służącymi wytłumaczeniu, skąd mogą pochodzić róznice w wykresach Break Down. W rzeczywistości powody mogą być znacznie bardziej skomplikowane.
