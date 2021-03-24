@@ -1,0 +1,80 @@
+---
+title: "Warsztaty badawcze - XAI - Praca domowa 1"
+author: "Paulina Jaszczuk"
+date: "23 03 2021"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+library(mlr)
+library(DALEX)
+library(DALEXtra)
+
+df <- read.csv("C:\\Users\\pauli\\warsztaty_badawcze\\lab3\\pd1\\german_credit.csv")
+class_numerical <- model.matrix(~ 0 + class, df)
+df$class <- class_numerical[,"classgood"]
+model <- ranger::ranger(class~., data = df, classification = TRUE, probability = TRUE)
+explainer <- explain(model = model, data = df, y = df$class)
+```
+
+## Predykcja dla wybranej obserwacji
+
+### Obserwacja 1
+
+```{r two}
+predict(model, df[1,])$predictions
+```
+
+
+```{r three}
+df[1, "class"]
+```
+
+## Dekompozycja obserwacji
+
+### Obserwacja 1
+
+
+```{r four}
+decomp <- predict_parts(explainer, new_observation = df[1,])
+plot(decomp)
+```
+
+```{r five}
+decomp_shap <- predict_parts(explainer, new_observation = df[1,], type = "shap", B = 10)
+plot(decomp_shap)
+```
+
+Jak widać na wykresie dla modelu najważniejsze zmienne to 'checking_status' mniejsze od zera, 'credit_history' równe 'critical/other existing credit' i `duration` równe 6. 
+
+## Obserwacje o różnych zmiennych znaczących
+
+### Obserwacja 305
+
+```{r six}
+decomp2 <- predict_parts(explainer, new_observation = df[305,])
+plot(decomp2)
+```
+
+Jak widzimy na wykresie najważniejsze zmienne dla tej cechy to 'duration' równe 48 oraz 'credit_amount' równe 10130 w przeciwieństwie do zmiennej nr 1 zaprezentowanej powyżej.
+
+## Obserwacje o przeciwnych efektach tych samych zmienych
+
+### Obserwacja 305
+
+```{r seven}
+decomp2 <- predict_parts(explainer, new_observation = df[305,])
+plot(decomp2)
+```
+
+### Obserwacja 1
+
+```{r eight}
+decomp2 <- predict_parts(explainer, new_observation = df[1,])
+plot(decomp2)
+```
+
+Zmienna 'credit_history' o wartości 'critical/other existing credit' dla obu obserwacji ma dla obserwacji nr 305 efekt negatywny, zaś dla zmiennej nr 1 efekt pozytywny.
+
+## Podsumowanie
+Na wartość predykcji wpływa wiele czynników, czasami są one intuicyjne i logiczne, a niekiedy wręcz przeciwnie. Różne zmienne, mimi tej samej wartości, mogą różnie wpływać na konkretne obserwacje (raz "pozytywnie", raz "negatywnie"). Warto również zauważyć, że na predykcję ma wpływ zbiór czynników, nie one pojedynczo. 
