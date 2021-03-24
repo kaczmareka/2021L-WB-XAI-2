@@ -1,0 +1,107 @@
+---
+title: "WB XAI-2 HW 1"
+author: "Agata Kaczmarek"
+date: "24 03 2021"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+#biblioteki
+library(DALEX)
+library(DALEXtra)
+#dane
+phones <- read.csv("phones.csv")
+```
+
+## Cel
+Dla dostępnego zbioru danych dotyczącego telefonów (parametry dla wybranych modeli oraz ich ceny) przeanalizować w jaki sposób poszczególne parametry wpływają na przewidywaną cenę urządzenia oraz spróbować wyjaśnić. Model został stworzony przy wykorzystaniu lasu losowego z pakietu ranger.
+
+
+Przyjrzyjmy się naszym danym, czy zawierają one jakieś braki? Jeśli tak, to je usuniemy.
+
+```{r}
+which(is.na(phones))
+
+#usuwamy braki
+phones2<- phones[complete.cases(phones),]  
+```
+
+## Predykcja dla wybranej obserwacji
+
+Dla naszych danych tworzę model, następnie dla wybranej obserwacji ze zbioru danych wyliczam predykcję modelu.
+
+```{r}
+#tworzymy model
+model <- ranger::ranger(price~., data=phones2)
+model
+#predykcja dla pierwszego 
+predict(model, phones2[1,])$predictions
+#dane podane
+phones[1,]$price
+```
+
+Model przewiduje cenę danego urządzenia na podstawie dostępnych mu parametrów.
+
+## Wyliczanie dekompozycji
+Dla wcześniej wybranej obserwacji przy pomocy Break Down zobaczmy dekompozycję - powie nam ona w jaki sposób "myślał" model wyliczając przewidywaną cenę. Czyli które wartości których własności uznał za pozytywnie wpływające na cenę (podwyższające ją) a które negatywnie (obniżające ją).
+
+```{r}
+#explainer
+explainer <- explain(model = model,
+                     data = phones2[,-11],
+                     y = phones2$price)
+
+explainer$predict_function
+#Break Down
+phones2_bd_1<-predict_parts(explainer,
+                            new_observation = phones[1,], type="break_down")
+plot(phones2_bd_1)
+```
+
+*prediction* odnacza przewidywaną cenę dla telefonu o wyżej pokazanych właściwościach. 
+Jak widać największy pozytywny wpływ na cenę miały *name* (+362), *width_px*(+163) oraz *ram_gb* (+156). Czyli jak widać model założył, że ludzie są skłonni zapłacić więcej, gdy zobaczą jakąś szczególną nazwę, co może być dość prawdziwym założeniem, jako że ludzie mogą gdzieś usłyszeć, że np konkretnie taki, a nie inny model jest polecany. Co więcej zauważył, że znaczny wpływ na cenę może mieć szerokość ekranu, ale co ciekawe, w tym przypadku, nie wysokość. Przypuszczam, że w rzeczywistości szerokośći wysokość ekranu mogą być brane pod uwagę z podobnym priorytetem, podobnie jak przekątna ekranu, która dla modelu nie miała aż takiego wielkiego wpływu. Trzecią właściwością mającą największe znaczenie wg modelu była ilość pamięci RAM w GB, co też wydaje się być "rzeczywistym" założeniem.
+
+## Najważniejsze zmienne
+Wybór dwóch obserwacji, które mają najważniejsze inne zmienne.
+
+```{r}
+phones2_bd_3<-predict_parts(explainer,
+                            new_observation = phones[3,], type="break_down")
+plot(phones2_bd_3)
+
+```
+
+Powyżej widać, że za najważniejsze zmienne w tym przypadku model uznał *flash_gb* (+1006), *ram_gb*(+772) oraz *diag* (+216). Również w tym przypadku wydają się to być sensowne założenia, aczkolwiek w moim odczuciu takie różnice we wpływie na cenę (dla *flash_gb* jest to prawie 5 razy więcej zł wpływu niż dla *diag*) mogą być kwestią dyskusyjną.
+
+```{r}
+phones2_bd_8<-predict_parts(explainer,
+                            new_observation = phones[8,], type="break_down")
+plot(phones2_bd_8)
+```
+
+Tutaj natomiast za najważniejsze model uznał *name* (+362), *front_camera_mpix*(+135) oraz *width_px*(+186). Te zmienne, chociaż inne niż we wcześniejszym przykładzie, również wyglądają na sensowne założenia.
+
+## Obserwacje mające inne efekty dla tych samych zmiennych
+### Obserwacja 31
+```{r}
+phones2_bd_31<-predict_parts(explainer,
+                            new_observation = phones[31,], type="break_down")
+plot(phones2_bd_31)
+```
+Powyżej obserwacja dla której model uznał wpływ *width_px* oraz *height_px* za negatywny (obniżył przewidywaną cenę).
+### Oberwacja 11
+```{r}
+phones2_bd_11<-predict_parts(explainer,
+                            new_observation = phones[11,], type="break_down")
+plot(phones2_bd_11)
+```
+Zaś tutaj model uznał wpływ *width_px* oraz *height_px* za pozytywny (podwyższył przewidywaną cenę).
+
+Powyżej możemy zobaczyć, że wartości dla zmiennych *width_px* oraz *height_px* nie odbiegają od siebie w znaczny sposób. W obserwacji 31 szerokość ekranu to 720, a wysokość 1560, podczas gdy w obserwacji 11 te wartości odpowiednio to 828 oraz 1792. A jednak wpływ tych wartości na przewidywaną cenę ostateczną jest diametralnie inny. Co więcej, sama cena modelu bardzo różni się w obu przypadkach - dla obserwacji 31 jest to 443, natomiast 11 - 2859. 
+
+W tej sytuacji możemy powiedzieć, że rozważane tu dwie zmienne nie są jedynymi, które mają wpływ na końcowy wynik (cenę). Podczas tworzenia przewidywanych cen, model ma do dyspozycji 10 różnych zmiennych. A to znaczy, że w różnych przypadkach, różne wartości pozostałych 8 zmiennych będą miały znaczący wpływ na cenę końcową, a także na istotność wymienionych tu zmiennych.
+
+## Wnioski
+
+Model stworzony na potrzeby tego zadania przewidywał ceny telefonów na podstawie 10 różnych ich cech. Jak można zauważyć po przytoczonych tu przykładach, nie możemy powiedzieć, że zawsze któraś konkretna cecha będzie miała największy wpływ na cenę, a któraś najmniejszy. Wpływ poszczególnych zmiennych i wartości jest bardziej skomplikowany do znalezienia. O ile wnioski na podstawie wyjaśnień modelu w powyższych przykładach wydają się być "sensowne" i "rzeczywiste", o tyle założenie z góry że jedna konretna zmienna ma najwiekszy wpływ na cenę, w tym przypadku okazałoby się założeniem błędnym. 
+
