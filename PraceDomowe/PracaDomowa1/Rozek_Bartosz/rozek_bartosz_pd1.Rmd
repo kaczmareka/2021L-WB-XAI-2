@@ -1,0 +1,139 @@
+---
+title: "PD1"
+output:
+  html_document: default
+  pdf_document: 
+    latex_engine: xelatex
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r, message=FALSE}
+library(DALEX)
+library(tidyverse)
+library(reshape2)
+library(mlr)
+```
+
+# Model podkradziony z kaggle
+
+```{r, chache=TRUE}
+
+housing <- read.csv("housing.csv")
+
+housing$total_bedrooms[is.na(housing$total_bedrooms)] = median(housing$total_bedrooms , na.rm = TRUE)
+
+housing$mean_bedrooms = housing$total_bedrooms/housing$households
+housing$mean_rooms = housing$total_rooms/housing$households
+
+drops = c('total_bedrooms', 'total_rooms')
+
+housing = housing[ , !(names(housing) %in% drops)]
+
+categories = unique(housing$ocean_proximity)
+#split the categories off
+cat_housing = data.frame(ocean_proximity = housing$ocean_proximity)
+
+for(cat in categories){
+    cat_housing[,cat] = rep(0, times= nrow(cat_housing))
+}
+head(cat_housing) #see the new columns on the right
+
+for(i in 1:length(cat_housing$ocean_proximity)){
+    cat = as.character(cat_housing$ocean_proximity[i])
+    cat_housing[,cat][i] = 1
+}
+
+cat_columns = names(cat_housing)
+keep_columns = cat_columns[cat_columns != 'ocean_proximity']
+cat_housing = select(cat_housing,one_of(keep_columns))
+
+drops = c('ocean_proximity','median_house_value')
+housing_num =  housing[ , !(names(housing) %in% drops)]
+
+scaled_housing_num = scale(housing_num)
+
+cleaned_housing = cbind(cat_housing, scaled_housing_num, median_house_value=housing$median_house_value)
+
+set.seed(1738) # Set a random seed so that same sample can be reproduced in future runs
+
+sample = sample.int(n = nrow(cleaned_housing), size = floor(.8*nrow(cleaned_housing)), replace = F)
+train = cleaned_housing[sample, ] #just the samples
+test  = cleaned_housing[-sample, ] #everything but the samples
+
+train_y = train[,'median_house_value']
+train_x = train[, names(train) !='median_house_value']
+
+library('randomForest')
+rf_model = randomForest(train_x, y = train_y , ntree = 500, importance = TRUE)
+
+```
+
+# Część właściwa pracy domowej
+
+## Predykcja modelu dla pojedyńczej wartości (pierwszej)
+
+```{r, cache=TRUE}
+print(predict(rf_model, cleaned_housing[1, -14]))
+cleaned_housing[1, 14]
+```
+
+## Tworzenie explainera
+
+```{r, cache=TRUE, message=FALSE}
+explainer <- DALEX::explain(model = rf_model,
+                     data = cleaned_housing[, -14],
+                     y = cleaned_housing[, 14])
+```
+
+## Dekompozycja break down
+
+```{r, cache=TRUE}
+rf_bd_1 <- predict_parts(explainer, new_observation = cleaned_housing[1, -14], type = "break_down")
+plot(rf_bd_1)
+```
+
+## Dekompozycja shap
+
+```{r, cache=TRUE}
+rf_shap <- predict_parts(explainer, new_observation = cleaned_housing[1, -14], type = "shap", B = 10)
+plot(rf_shap)
+```
+
+Widzimy, że najważniejsze są zmienne średniego dochodu, co świadczy o "poziomie" okolicy oraz średnia liczba pomieszczeń, która oczywiście też jest mocno skorelowana z ceną domu. Dalej jest położenie (szerokość i długość geograficzna) oraz zmienna odnosząca się do położenia względem oceanu. Warto zauważyć, że latitude obniża cenę. 
+
+## Obserwacja mająca inne najważniejsze zmienne
+
+```{r, cache=TRUE}
+rf_bd_2 <- predict_parts(explainer, new_observation = cleaned_housing[5, -14], type = "break_down")
+
+pred_parts_1_sorted <- rf_bd_1[order(-abs(rf_bd_1$contribution)),]
+pred_parts_2_sorted <- rf_bd_2[order(-abs(rf_bd_2$contribution)),]
+
+
+A <- data.frame(pred_parts_1_sorted$variable_name,pred_parts_1_sorted$contribution,pred_parts_2_sorted$variable_name,pred_parts_2_sorted$contribution)
+colnames(A) <- c("Obs 1. var. name", "Obs. 1. var. contribiution", "Obs. 2. var. name", "Obs. 2. var. contribiution")
+
+print(A)
+
+print(housing[c(1,5), -14])
+```
+
+Jak widzimy dla pierwszej obserwacji najważniejsze są średni przychód i średnia ilość pomieszczeń, natomiast dla drugiej położenie: szerokość i długość geograficzna. Pierwszy rekord opisałem w podpunkcie 2. Druga obserwacja jest 5 z kolei w zbiorze, a przez to jest mocno zbliżona do pierwszej ze względu na położenie (latitude i longitude). Dla drugiej obserwacji zmienne 'median_income' i 'mean_rooms' mają niższe wartości, prawdopodobnie w związku z czym mają mniejsze contribution. Najwyższy wpływ na predykcje drugiej obserwacji ma długość i szerokość geograficzna.
+
+## Zmienne posiadające przeciwne wpływy
+
+```{r}
+rf_bd_3 <- predict_parts(explainer, new_observation = cleaned_housing[20640, -14])
+
+pred_parts_1_sorted_alf <- rf_bd_1[order(desc(rf_bd_1$variable_name)),]
+pred_parts_3_sorted_alf <- rf_bd_3[order(desc(rf_bd_3$variable_name)),]
+B <- data.frame(pred_parts_1_sorted_alf$variable_name,pred_parts_1_sorted_alf$contribution,pred_parts_3_sorted_alf$contribution, 
+                sign(pred_parts_1_sorted_alf$contribution*pred_parts_3_sorted_alf$contribution))
+colnames(B) <- c("Var. name", "Contribiution 1", "Contribiution 3", "Sign of multiply")
+print(B)
+```
+
+Teraz wziałem jeden z ostatnich rekordów z tabeli, dzięki czemu nieruchomość ma znacznie inne położenie. Dla wcześniejszych obserwacji te zmienne miały duży wpływ na predykcję, więc stwierdziłem, że duża ich zmiana spowoduje "zamieszanie" w predykcji. Tak się stało i jak widzimy w ostatniej kolumnie tabeli B połowa zmiennych ma przeciwny wpływ (porównując obserwacje 1 i 3).   
