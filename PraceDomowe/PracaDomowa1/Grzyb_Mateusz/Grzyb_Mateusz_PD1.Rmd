@@ -1,0 +1,187 @@
+---
+title: "WB-XAI-2 - praca domowa 1"
+subtitle: "Mateusz Grzyb"
+output:
+  html_document:
+    df_print: paged
+---
+
+<br>
+
+![](https://static.turbosquid.com/Preview/2016/09/26__12_14_55/R0.pngE649D7B9-45F3-4207-B43D-8A06F77214CBLarge.jpg){width=25%}
+
+<br>
+
+## Wczytanie i opis zbioru danych
+
+```{r, load_data, message=FALSE}
+library(OpenML)
+
+blood <- getOMLDataSet(data.id = 1464)
+blood <- blood$data
+
+head(blood)
+```
+
+Jak widać, nazwy zmiennych są dosyć enigmatyczne.
+
+<br>
+
+Poniżej znajduje się opis zbioru danych wraz z objaśnieniem znaczenia zmiennych.
+
+> Blood Transfusion Service Center Data Set
+> Data taken from the Blood Transfusion Service Center in Hsin-Chu City in Taiwan.
+>
+> To demonstrate the RFMTC marketing model (a modified version of RFM), this study adopted the donor database of Blood Transfusion Service Center in Hsin-Chu City in Taiwan. The center passes their blood transfusion service bus to one university in Hsin-Chu City to gather blood donated about every three months. To build an FRMTC model, we selected 748 donors at random from the donor database. 
+>
+> ### Attribute Information  
+> * V1: Recency - months since last donation
+> * V2: Frequency - total number of donation
+> * V3: Monetary - total blood donated in c.c.
+> * V4: Time - months since first donation
+>
+> The target attribute is a binary variable representing whether he/she donated blood in March 2007 (2 stands for donating blood; 1 stands for not donating blood).
+
+<br>
+
+Zmieńmy nazwy zmiennych oraz poziomy zmiennej celu (Class).
+
+```{r edit_data}
+names(blood) <- c("Recency", "Frequency", "Monetary", "Time", "Donated")
+blood$Donated <- factor(ifelse(blood$Donated==2, 1, 0))
+
+head(blood)
+```
+
+<br>
+
+Rzućmy okiem na rozkłady zmiennych.
+
+```{r plot_variables, fig.height=6, fig.width=9}
+library(ggplot2)
+library(gridExtra)
+
+variables <- names(blood)
+
+plots <- lapply(variables, function(variable){
+  ggplot(data=blood, aes_string(variable)) +
+    geom_bar(fill='skyblue') +
+    ylab('') +
+    theme_bw()
+})
+
+grid.arrange(grobs=plots, ncol=3)
+```
+
+Na wykresach widać co najmniej dwie istotne kwestie:
+
+* rozkłady zmiennych Frequency (całkowita liczba donacji) i Monetary (całkowita ilość oddanej krwi) są identyczne z dokładnością do skali (co prowdopodobnie wynika z faktu, że za każdym razem oddawana jest ta sama ilość krwi),
+
+* rozkład zmiennej celu (Donated) nie jest równomierny.
+
+<br>
+
+## Przygotowanie modelu
+
+W celu wykonania zadania posłużę się lasem losowym z domyślnymi parametrami.
+
+```{r, get_model, message=FALSE}
+library(mlr)
+library(PRROC)
+
+classif_task <- makeClassifTask(id='blood', data=blood, target = "Donated")
+classif_lrn <- makeLearner("classif.ranger", predict.type="prob")
+
+model <- train(classif_lrn, classif_task)
+
+pred <- predict(model, classif_task)$data$prob.1
+
+fg <- pred[blood$Donated==1]
+bg <- pred[blood$Donated==0]
+
+roc <- roc.curve(scores.class0=fg, scores.class1=bg, curve=T)
+pr <- pr.curve(scores.class0=fg, scores.class1=bg, curve=T)
+```
+
+```{r, roc}
+plot(roc)
+```
+
+```{r, pr}
+plot(pr)
+```
+
+Model jest wystarczająco dobry na potrzeby tego zadania. Należy pamiętać, że zbiór nie został podzielony na podzbiór treningowy i testowy.
+
+<br>
+
+## Break Down i Shapley
+
+Stwórzmy najpierw instancję explainera.
+
+```{r, explainer, message=FALSE}
+library(DALEX)
+library(DALEXtra)
+explainer <- explain(model=model, data=blood, y=as.numeric(blood$Donated), label='mlr.ranger')
+```
+<br>
+
+Poniżej znajdują się rozwiązania poszczególnych podpunktów pracy domowej.
+
+"Dla wybranej obserwacji ze zbioru danych wylicz predykcję modelu."
+
+```{r, 1}
+obs <- blood[13, ]
+pred <- predict(model, newdata=obs)
+pred$data
+```
+
+Model poprawnie przewidział odpowiedź dla obserwacji numer 12.
+
+<br>
+
+"Dla wybranej obserwacji z punktu 1., wylicz dekompozycję predykcji modelu używając SHAP, Break Down lub obie (pakiety w R: DALEX, iml, pakiety w Python: shap, dalex, piBreakDown)."
+
+```{r, 21}
+bd12 <- predict_parts(explainer, new_observation=blood[13, 1:4])
+plot(bd12)
+```
+
+```{r, 22}
+sh12 <- predict_parts(explainer, new_observation=blood[13, 1:4], type="shap", B=24)
+plot(sh12)
+```
+
+Wszystkie cechy osoby skrywającej się za obserwacją numer 12 wpływają korzystnie na prawdopodobnieństwo kolejnego oddania krwi - to, że oddawała ona krew zaledwie 2 miesiące temu, że oddała już 2500 jednostek w 10 donacjach oraz to, że oddaje ona krew już od ponad 2 lat (chociaż zgodnie z wykresem Shapley pozytywności tej cechy możemy być pewni najmniej).
+
+<br>
+
+"Wybierz dwie obserwacje ze zbioru danych, które mają inne najważniejsze zmienne (na przykład: dla obserwacji A ważne zmienne to wiek i płeć, a dla obserwacji B klasa i rasa)."
+
+```{r, 31}
+bd0 <- predict_parts(explainer, new_observation=blood[1, 1:4])
+plot(bd0)
+```
+
+```{r, 32}
+bd6 <- predict_parts(explainer, new_observation=blood[7, 1:4])
+plot(bd6)
+```
+
+Osoba skrywająca się pod obserwacją numer 0 oddała już kolosalne 12500 jednostek krwi i cecha ta ma w jej przypadku największą kontrybucję do predykcji. Osoba reprezentowana przez obserwację numer 6, podobnie jak poprzednia osoba, oddawała krew zaledwie 2 miesiące temu, jednak ponieważ sumarycznie oddała jej do tej pory znacząco mniej, to właśnie ten pierwszy czynnik staje się najważniejszy dla przewidywań algorytmu. 
+
+<br>
+
+Znajdź dwie obserwacje ze zbioru danych, które mają dla tych samych zmiennych inne efekty (pozytywny i negatywny)
+
+```{r, 43}
+sh1 <- predict_parts(explainer, new_observation=blood[2, 1:4], type="shap", B=24)
+plot(sh1)
+```
+
+```{r, 42}
+sh341 <- predict_parts(explainer, new_observation=blood[342, 1:4], type="shap", B=24)
+plot(sh341)
+```
+
+Fakt, że osoba spod obserwacji numer 1 oddawała krew jeszcze w tym miesiącu, wpływa zdecydowanie pozytywnie na szansę, że zrobi to ponownie. Z kolei dla osoby ukrytej pod obserwacją 341 widzimy, że nieoddawanie przez nią krwi od niemal dwóch lat ma skutek zdecydowanie przeciwny (choć w swoim czasie oddała ona znacznie więcej krwi, niż pierwsza osoba).
