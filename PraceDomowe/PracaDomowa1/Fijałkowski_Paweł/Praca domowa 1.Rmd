@@ -1,0 +1,78 @@
+---
+title: "Praca domowa 1 xai"
+author: "Paweł Fijałkowski"
+output: html_document
+date: "24/03/2021"
+---
+
+## Temat pracy
+
+Praca powstała jako realizacja prostej analizy wyjaśniającej decyzję modelu uczenia maszynowego - lasu losowego.  
+Problem klasyfikacyjny z jakim będziemy pracować to problem określenia zdolności kredytowej klientów niemieckiego banku (`good` i `bad`). 
+
+```{r include=FALSE}
+library(mlr)
+library(ranger)
+library(DALEX)
+library(DALEXtra)
+```
+
+```{r setup}
+german_credit <- read.csv("german-credit.csv")
+model <- ranger::ranger(class~., data = german_credit, classification = TRUE, probability = TRUE)
+explainer <- explain(model = model,data = german_credit,y = german_credit$customer_type)
+```
+
+Po imporcie danych, stworzeniu obiektu modelu i explainera, dokonajmy odpowiednich predykcji.  
+Wybierzmy do tego celu obserwacje `123`.
+
+```{r prediction123}
+prediction_123 <- predict(model, german_credit[123,])
+true_val_123 <- german_credit[123,"class"]
+true_val_123
+good_prob <- prediction_123$predictions[2]
+```
+
+Widzimy, że poprawna wartość to `good`, a nasz podel przewidział to z prawdopodobieństwem: `r good_prob`.  
+Takie wyniki wydają się dość satysfakcjonujące z punktu widzenia dokładności predykcji.
+
+## Wyjaśnienie predykcji
+
+Użyjemy `predict_parts` do wytłumaczenia podjętych przez model decyzji.  
+(Dlaczego klientowi `123` przyporządkowany klasę `good` z takim wysokim prawdopodobieństwem?)
+```{r predict_parts123}
+p <- predict_parts(explainer = explainer, new_observation = german_credit[123,])
+plot(p)
+```
+
+Teraz do tego samego celu wykorzystajmy metodę dekompozycji Shapa.
+
+```{r prediction_123_2}
+p2 <- predict_parts(explainer, new_observation = german_credit[123,], type = "shap", B = 10)
+plot(p2)
+```
+
+
+Zauważmy, że największy wpływ na predykcję dla obserwacji `123` miały zmienne `checking_status` i `duration`.    
+Poszukajmy więc obserwacji dla której hierarchia wpływu zmiennych się różni.
+
+```{r predict_parts420}
+p3 <- predict_parts(explainer, new_observation = german_credit[420,])
+plot(p3)
+```
+
+W przypadku obserwacji `420` są to zmienne `savings_status` i `purpose`.  
+
+Poszukajmy teraz obserwacji na której predykcję negatywnie wpływać będzie wartość zmiennej `checking_status`.  
+
+```{r predict_parts1}
+p4 <- predict_parts(explainer, new_observation = german_credit[1,])
+plot(p4)
+```
+
+Porównując analizę predykcji dla obserwacji `123` i `1`, widzimy że `checking_status` w tej pierwszej ma dodatnią kontrybucję do predykcji `good` (+0.111), a w drugiej ujemną (-0.109).  
+Jest to dość naturalna kolej rzeczy, osoby z ujemnym saldem intuicyjnie powinny być gorszymi kredytobiorcami.
+
+## Wnioski
+
+Metody `break down` pozwoliły nam stwierdzić, że największy wpływ na predykcję modelu mają zmienne `checking_status`, `duration` i `age`. Wydaje się to zgodne z naszymi intuicyjami. Młody wiek kredytobiorcy i niskie saldo konta oszczędnościowego zwiększa prawdopodobieństwo klasyfikacji do klasy `bad`. Analizując jednak jedynie pojedyncze obserwację nie jesteśmy w stanie jednoznacznie skonkludować co do wpływu poszczególnych zmiennych w ogólności w przypadku wszystkich obserwacji. 

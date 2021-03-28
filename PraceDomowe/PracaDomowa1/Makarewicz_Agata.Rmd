@@ -1,0 +1,92 @@
+---
+title: "Praca Domowa 1"
+author: "Agata Makarewicz"
+date: "23 03 2021"
+output: 
+  html_document:
+  theme: united
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+library(DALEX)
+library(DALEXtra)
+library(ranger)
+library(knitr)
+set.seed(1)
+```
+
+### Wstęp 
+
+Naszym zadaniem będzie analiza wyjaśniająca decyzję modelu uczenia maszynowego (w jaki sposób poszczególne zmienne na nią wpływają). Będą to wyjaśnienia lokalne, dla pojedynczych predykcji.
+
+Skorzystamy ze zbioru danych `phones` zawierającego informacje o cechach różnych telefonów dostępnych na rynku. Rozważamy problem regresji (chcemy przewidzieć zmienną `price`) przy wykorzystaniu lasu losowego zaimplementowany w pakiecie `ranger`. Analizy dokonamy na poniższych obserwacjach:
+
+```{r data}
+data <- read.csv('C:/Users/agama/Documents/2021L-WB-XAI-2/phones.csv')
+kable(data[c(1,4,26,120),], row.names = TRUE)
+```
+
+Zbiór posiada ok. 11% obserwacji z brakującymi wartościami w niektórych kolumnach, na potrzeby tego zadania (tworzenia modelu) rekordy te zostaną pominięte. Pominiemy również zmienną `name`, która jest w oczywisty sposób skorelowana ze zmienną `brand` oraz praktycznie unikalna dla każdej obserwacji (328/368 wartości unikalnych po usunięciu braków).
+
+```{r missing}
+# kable(sapply(data[,c('back_camera_mpix','front_camera_mpix')], function(x) sum(is.na(x))/(dim(data)[1])))
+data <- na.omit(data)
+```
+
+### Model & explainer
+
+```{r model, echo=TRUE, results=FALSE}
+model <- ranger(price~., data = data[,-1], num.trees = 50)
+explainer <- explain(model = model, data = data[,-c(1,11)], y = data$price) 
+```
+
+### Wyliczenie predykcji dla wybranej obserwacji
+
+```{r predict, echo=TRUE}
+predict(model, data[1,])$predictions
+```
+
+### Dekompozycja predykcji
+
+#### SHAP & BreakDown
+
+* SHAP z parametrem `B=10` - 10 losowych ustawień zmiennych objaśniających, dla których wyliczamy wartości Shapley'a (na wykresie średnia oraz rozkład)
+
+```{r shap_bd, fig.show="hold", out.width="50%"}
+shap_1 <- predict_parts(explainer, new_observation = data[1,], type = "shap", B = 10)
+plot(shap_1, title='SHAP - obserwacja 1')
+
+bd_1 <- predict_parts(explainer, new_observation = data[1,], type = "break_down")
+plot(bd_1, title='Break Down profile - obserwacja 1') 
+```
+
+W przypadku 1 obserwacji najważniejszymi zmiennymi dla dokonanej predykcji okazały się `ram_gb` oraz `brand`. Wynika z tego, że to właśnie ilość pamięci RAM oraz marka miały największy wpływ na cenę tego konkretnego telefonu. Z wykresu BreakDown możemy wyczytać również spore znaczenie zmiennej `width_px` jednak na wykresie SHAP jej wpływ nie odznacza się już tak wyraźnie od reszty. Co ciekawe, dość pojemna bateria oraz bardzo dobry aparat w tym wypadku obniżyły cenę (nieznacznie, ale jednak).
+
+### Ważność zmiennych
+
+```{r importance,  fig.show="hold", out.width="50%"}
+bd_1 <- predict_parts(explainer, new_observation = data[4,], type = "break_down")
+plot(bd_1, title='Break Down profile - obserwacja 4') 
+
+bd_1 <- predict_parts(explainer, new_observation = data[26,], type = "break_down")
+plot(bd_1, title='Break Down profile - obserwacja 26') 
+```
+
+W przypadku kolejnych dwóch obserwacji możemy zaobserwować zupełnie inne najważniejsze zmienne - dla obserwacji 4 są to `brand` oraz `width_px` a dla obserwacji 26 - `diag` oraz `ram_gb`. Widzimy zatem, że w jednym przypadku największy wpływ na cenę telefonu miała marka (tak jak w przypadku 1 obserwacji) oraz szerokość ekranu (co ciekawe wysokość oraz przekątna miały wpływ negatywny), a w drugim najistotniejsze okazały się pamięć RAM (ponownie) oraz przekątna ekranu. W zasadzie zarówno szerokość jak i przekątna w pewien sposób opisują nam wymiary telefonu, są więc w jakiś sposób ze sobą powiązane. zatem główną różnicę możemy zauważyć pomiędzy ważnością marki a pamięci RAM.
+
+### Przeciwne wpływy
+
+```{r pos_neg, fig.show="hold", out.width="50%"}
+bd_1 <- predict_parts(explainer, new_observation = data[26,], type = "break_down")
+plot(bd_1, title='Break Down profile - obserwacja 26') 
+
+bd_1 <- predict_parts(explainer, new_observation = data[120,], type = "break_down")
+plot(bd_1, title='Break Down profile - obserwacja 120') 
+```
+
+W przypadku tych dwóch obserwacji możemy zaobserwować diametralne różnice we wpływie zmiennych na wynik predykcji. Dla obserwacji 26 każda zmienna wpływa na wzrost ceny, co, patrząc na cenę tego telefonu (prawie 9000) jest w zasadzie zrozumiałe. Największy wpływ ma pamięć oraz wymiary telefonu, a marka właściwie minimalny - można zatem powiedzieć, że w tym wypadku cena faktycznie umotywowana jest parametrami, a nie marką producenta. W przypadku drugiej rozważanej obserwacji możemy zaobserwować negatywny wpływ większości zmiennych, a największy tych, które dla pierwszej obserwacji najbardziej "podwyższają" cenę. Zwróćmy jednak uwagę na wartości tych zmiennych - dla pierwszej obserwacji parametry są znacznie lepsze, nic więc dziwnego, że wpływają na cenę pozytywnie, natomiast dla drugiej zarówno pamięć jak i wymiary są dosyć słabe.
+
+## Wnioski
+
+Przeprowadzone analizy dotyczyły pojedynczych predykcji, i jak można zauważyć, ich wyniki znacznie różniły się między sobą. Rozważaliśmy telefony różnych marek, z różnych półek cenowych, więc jest to zrozumiałe. Na ich podstawie ciężko jest wyciągać wnioski dotyczące ogólnego działania naszego modelu i wyliczonej predykcji - do zauważenia ogólnych tendencji/wpływów należałoby użyć innych narzędzi, umożliwiających globalne wyjaśnienia. Możemy jednak zauważyć, że dla wszystkich 4 obserwacji wpływ marki na cenę był dodatni, a w 3 przypadkach bardzo znaczący - może to dać nam pewną intuicję do przyszłych analiz, że cena telefonu nie zależy jedynie od jego parametrów, a także od producenta.

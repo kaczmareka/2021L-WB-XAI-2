@@ -1,0 +1,127 @@
+---
+title: "WB XAI-2 PD1"
+author: "Jakub Szypuła"
+date: "22/03/2021"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+library(DALEX)
+library(DALEXtra)
+library(mlr)
+
+gcd <- read.csv("german_credit_data_dataset.csv")
+model <- ranger::ranger(customer_type~., data = gcd, classification = TRUE, probability = TRUE)
+explainer <- explain(model = model,
+                     data = gcd,
+                     y = gcd$customer_type)
+```
+
+## Cel zadania 
+
+Zadanie polega na przeanalizowaniu tego w jaki sposób zmienne wpływają na decyzje podjęte przez model ML i próbie wyjaśnienia tego. Na potrzeby zadania wykorzystałem las losowy zaimplementowany w pakiecie `ranger` na podstawie zbioru danych `german credit data`.
+
+## Pojedyncza predykcja
+
+Zobaczmy jak model przewiduje wartości dla wybranej obserwacji, powiedzmy pierwszej.
+
+```{r pred1}
+predict(model, gcd[1,])$predictions
+```
+
+A teraz zobaczmy jak wygląda faktycznie ta wartość dla tej obserwacji. 
+
+```{r actual1}
+gcd[1, "customer_type"]
+```
+
+Jak możemy więc zaobserwować, mówimy tutaj o prawdopodobieństwach zakwalifikowania danej obserwacji do danej klasy, gdzie 1 oznacza klasę "good", a 2 klasę "bad".
+
+## Dekompozycja
+
+Zobaczmy, dlaczego model uznał, że taka, a nie inna wartość, pasuje w tym miejscu.
+
+```{r dekompozycja1}
+pp_ranger_gcd_1 <- predict_parts(explainer, new_observation = gcd[1,])
+plot(pp_ranger_gcd_1)
+```
+
+```{r dekompozycjashap1}
+pp_ranger_shap_gcd_1 <- predict_parts(explainer, new_observation = gcd[1,], type = "shap", B = 10)
+plot(pp_ranger_shap_gcd_1)
+```
+
+"Prediction" na grafice oznacza prawdopodobieństwo zakwalifikowania obserwacji do klasy drugiej ("bad").
+
+Dla modelu najważniejszą zmienną (poza interceptem, który wynosi 0.304) jest `checking_account_status` o wartości A11. Następnie jest `savings` o wartości A65, duration równe 6 oraz `credit_history` równe A34 i `property` równe A121. Po sprawdzeniu dokumentacji zbioru^[https://archive.ics.uci.edu/ml/datasets/statlog+(german+credit+data)], te enigmatyczne wartości stają się mniej enigmatyczne, w nawiasach wpływ na predykcję modelu:
+
+* A11 w `checking_account` oznacza mniej niż 0 Marek niemieckich na rachunku bieżącym (+0.108)
+* 6 w `duration` oznacza liczbę miesięcy (-0.074)
+* A34 w `credit_history` oznacza, że jest to "critical account" lub ma kredyty w innych bankach (-0.039)
+* A121 w `property` oznacza, że osoba posiada nieruchomość (-0.032)
+
+Można zauważyć, że są to sensowne wpływy, spodziewalibyśmy się pozytywnych i negatywnych wpływów po tych wartościach. Wydają się "osadzone" w świecie rzeczywistym.
+
+## Ważność zmiennych
+
+Czy jednak bycie pod kreską i długość trwania kredytu są zawsze najważniejszymi zasadami, którymi model się posługuje?
+
+```{r waznezmienne}
+pp_ranger_gcd_1_oth <- predict_parts(explainer, new_observation = gcd[94,])
+plot(pp_ranger_gcd_1_oth)
+```
+
+O ile wcześniej najważniejszymi zmiennymi były `checking_account` i `duration`, to teraz jest to `age` równe 20 (+0.075) oraz `savings` równe A65 (-0.069), czyli brak konta oszczędnościowego (bądź nieznane konto oszczędnościowe). Ponownie, wydaje się to sensowne biorąc pod uwagę fakt, że młodzi dorośli, świeży na rynku pracy, mogą być gorszymi kredytobiorcami. Informacja o rachunku oszczędnościowym mogła zostac uznana za ważniejszą np. dlatego, że osoba bez takiego rachunku będzie mieć do dyspozyjci większą część swojej pensji.
+
+## Przeciwne wpływy
+
+Czasami zdarza się, że przy różnych wartościach innych zmiennych, ta sama wartość ma negatywny, bądź pozytywny wpływ na predykcję. Zobaczmy:
+
+### Obserwacja nr 60
+
+```{r inv1}
+pp_ranger_gcd_inv_1 <- predict_parts(explainer, new_observation = gcd[60,])
+plot(pp_ranger_gcd_inv_1)
+```
+
+### Obserwacja nr 230
+
+```{r inv2}
+pp_ranger_gcd_inv_2 <- predict_parts(explainer, new_observation = gcd[230,])
+plot(pp_ranger_gcd_inv_2)
+```
+
+Na początku tego nie widać, ale zagłębmy się do wszystkich wartości:
+
+```{r invdetail}
+gcd_inv_1 <- data.frame(
+  pp_ranger_gcd_inv_1$variable_name,
+  pp_ranger_gcd_inv_1$contribution,
+  pp_ranger_gcd_inv_1$variable_value)
+
+gcd_inv_2 <- data.frame(
+  pp_ranger_gcd_inv_2$variable_name,
+  pp_ranger_gcd_inv_2$contribution,
+  pp_ranger_gcd_inv_2$variable_value)
+
+gcd_inv_1 <- gcd_inv_1[1:22,]
+gcd_inv_2 <- gcd_inv_2[1:22,]
+
+colnames(gcd_inv_1) <- c("Variable_name", "Contribution1", "Value1")
+colnames(gcd_inv_2) <- c("Variable_name", "Contribution2", "Value2")
+
+comp <- merge(gcd_inv_1, gcd_inv_2, by = "Variable_name")
+comp
+```
+
+Część zmiennych ma różny wpływ przy różnych wartościach (np. `job`), natomiast wyróżnia się jedna - `purpose`, która ma w obu obserwacjach wartość A42 (meble/wyposażenie) która dla obserwacji 60-tej zwiększa ryzyko bycia w złej kategorii o 0.07%, a dla obsweracji 230-tej zmniejsza je o 2.2%! 
+
+Nie jest to takie nieoczywiste. Weźmy za przykład przewidywanie cen mieszkań. Jeżeli zachowamy taki sam metraż, ale zwiększymy liczbę przedpokoi o jeden, to cena naturalnie spadnie, co samo w sobie wydaje się nieintuicyjne (jak dodanie pokoju miałoby obniżyć cenę?). Uwzględnienie tej zmiany w kontekście danych jest ważne dla zrozumienia wpływu na predykcję.
+
+W tym konkretnym przypadku mówimy o osobach, które mają wiele wspólnego, więc skupię się na różnicach. 60-tka ma już 2 kredyty w tym banku, wynajmuje mieszkanie w którym mieszka od 4 lat i jest niewyszkolonym pracownikiem 230-tka tylko jeden kredyt, mieszka za darmo, mieszka tam od roku i jest wyszkolonym pracownikiem. Z perspektywy banku ma to sens, że osoba, która nie jest wyszkolonym pracownikiem, ma już dwa kredyty i mieszka w wynajmowanym mieszkaniu od 4 lat jest bardziej ryzykowna jeśli chce zakupić nowy mebel bądź wyposażenie. Natomiast osoba, która mieszka w obecnym miejscu zamieszkania od niedawna, jest wyszkolonym pracownikiem i ma tylko jeden kredyt może potrzebować tych mebli, więc szansa na spłacenie kredytu będzie nieznacznie wyższa, niż gdyby celem było coś innego. Oddaje to też ogólne prawdobieństwo zakwalifikowania do "złej" klasy - 60-tka ma aż 80%, zaś 230-tka tylko 28%
+
+## Podsumowanie
+
+Jak widać, wpływy zmiennych i ich wartości na predykcję nie są takie oczywiste jak mogłyby się wydawać. Jak pokazuje ostatni przykład, wpływy te nie mogą być rozważane osobno, także jak pokazuje pierwsze porównanie, nie można z góry zakładać jakie zmienne są "najważniejsze". Przydatne w tym wypadku okazało się osadzenie danych w łatwym do zrozumienia i dosyć intuicyjnym kontekście, co pozwoliło na wysnucie wniosków i hipotez, które mogą pomóc wytłumaczyć przyczyny takiego, a nie innego zachowania modelu.
+
+
