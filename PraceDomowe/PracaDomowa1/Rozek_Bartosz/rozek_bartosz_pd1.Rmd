@@ -82,17 +82,17 @@ cleaned_housing[1, 14]
 
 ## Tworzenie explainera
 
-```{r, cache=TRUE, message=FALSE}
+```{r, cache=TRUE}
 explainer <- DALEX::explain(model = rf_model,
                      data = cleaned_housing[, -14],
-                     y = cleaned_housing[, 14])
+                     y = cleaned_housing[, 14], colorize=FALSE)
 ```
 
 ## Dekompozycja break down
 
 ```{r, cache=TRUE}
 rf_bd_1 <- predict_parts(explainer, new_observation = cleaned_housing[1, -14], type = "break_down")
-plot(rf_bd_1)
+plot(rf_bd_1) + ylim(200000,600000)
 ```
 
 ## Dekompozycja shap
