@@ -6,12 +6,13 @@ output: html_document
 ---
 
 ```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = TRUE, cache=TRUE)
+knitr::opts_chunk$set(echo = FALSE)
 library(OpenML)
 library(mlr)
 library(DALEX)
 library(DALEXtra)
 library(knitr)
+library(ranger)
 set.seed(1)
 diabetes <- getOMLDataSet(data.id = 37L)
 diabetes <- diabetes$data
@@ -52,7 +53,7 @@ grid.arrange(grobs=plots, ncol=3)
 W rozwiązaniu zostanie użyty model Random Forest. Według danych OpenML  ( https://www.openml.org/t/37 ) osiąga on średnio największą wartość miary accuracy.
 
 ```{r explainer}
-model_ranger <- ranger::ranger(class~., data = diabetes, classification = TRUE, probability = TRUE)
+model_ranger <- ranger(class~., data = diabetes, classification = TRUE, probability = TRUE)
 
 explainer<- DALEX::explain(model = model_ranger,
                          data = diabetes[,-9],
@@ -116,6 +117,7 @@ Zatem nasza pacjentka na tym tle nie wypada tak źle.
 ```{r}
 kable(diabetes[26,])
 ```
+
 Pacjentka ma 41 lat, była w ciąży 10 razy, ma BMI 31,1 i chorowała na cukrzycę.
 
 ```{r}
@@ -128,6 +130,7 @@ lime_ranger26 <- predict_surrogate(
 
 plot(lime_ranger26)
 ```
+
 Tą pacjentkę model z prawdopodobieństwem 65% zaklasyfikowałby jako chorą, na co wpływa ponownie duża liczba ciąży oraz wiek powyżej 29 lat. Tym razem wartość funkcji obciążenia genetycznego jest jednak dość niska, co obniża prawdopodobieństwo wystąpienia cukrzycy.
 
 ### Obserwacja 39
@@ -136,6 +139,7 @@ Tą pacjentkę model z prawdopodobieństwem 65% zaklasyfikowałby jako chorą, n
 ```{r}
 kable(diabetes[39,])
 ```
+
 Pacjentka ma 27 lat, była w ciąży 2 razy, ma BMI 382, i chorowała na cukrzycę.
 
 ```{r}
@@ -148,6 +152,7 @@ lime_ranger39 <- predict_surrogate(
 
 plot(lime_ranger39)
 ```
+
 U tej pacjentki model nieprawidłowo przewidział to, czy pacjentka jest chora, ale był całkiem blisko (43%). Prawdopodobieństwo to bardzo zwiększyło wysokie BMI, ale niemal równie mocno obniżył niskie stężenie glukozy (`plas`, średnia ok.120). Bardzo nieznacznie zmniejszyło je też to, że była w ciąży tylko 2 razy.
 
 ### Obserwacja 52
@@ -156,6 +161,7 @@ U tej pacjentki model nieprawidłowo przewidział to, czy pacjentka jest chora, 
 ```{r}
 kable(diabetes[52,])
 ```
+
 Pacjentka ma 26 lat, była w ciąży 1 raz, ma BMI 24,2 (prawidłowe!), i nie chorowała na cukrzycę.
 
 ```{r}
@@ -179,7 +185,8 @@ Dla różnych obserwacji istone były różne zmienne, lecz zawsze to była jedn
  
 ## LIME oraz SHAP dla obserwacji 13
 
-Dopasujmy teraz LIME z 8 zamiast 3 zmiennych,aby łatwiej było porównać go z SHAP
+Dopasujmy teraz LIME z 8 zamiast 3 zmiennych,aby łatwiej było porównać go z SHAP.
+
 ```{r}
 lime_ranger13_all <- predict_surrogate(
   explainer = explainer,
