@@ -1,0 +1,202 @@
+---
+title: "WB-XAI-2 Praca domowa 1"
+author: "Janus Dawid"
+date: "25 03 2021"
+output: html_document
+---
+
+
+## Wczytanie danych
+
+```{r,echo=FALSE, results='hide', message=FALSE,warning=FALSE}
+library(lime)
+library(DALEX)
+library(DALEXtra)
+library(mlr)
+library(dplyr)
+
+
+```
+
+```{r}
+
+
+blood <- read.csv("D:/Studia/Projekty/R-projekty/blood.csv", 
+                   header = TRUE)
+
+head(blood)
+
+```
+
+## Informacje o danych
+* V1: Recency - months since last donation
+* V2: Frequency - total number of donation
+* V3: Monetary - total blood donated in c.c.
+* V4: Time - months since first donation)
+* Class: The target attribute is a binary variable representing whether he/she donated blood in March 2007 (2 stands for donating blood; 1 stands for not donating blood).
+
+## Zmiana nazw kolumn 
+
+```{r}
+
+
+names(blood) <- c("Recency", "Frequency", "Monetary", "Time", "Class")
+
+blood<-blood %>% mutate(Class=as.integer(Class-1))
+
+
+head(blood)
+
+```
+
+
+## Tworzenie modelu 
+
+```{r}
+
+
+classif_task <- makeClassifTask(data = blood, target = "Class")
+classif_lrn <- makeLearner("classif.ranger", predict.type = "prob")
+model_mlr <- train(classif_lrn, classif_task)
+
+```
+
+
+## Utworzenie explainera
+
+```{r}
+
+explainer <- explain(model = model_mlr,
+                     data = blood[,-5],
+                     y = blood[,5])
+```
+
+
+## Wyświetlenie jednej obserwacji
+
+```{r}
+
+prep  <-predict(model_mlr, newdata = blood[1,])$data$prob.1
+prep
+blood[1,5]
+
+```
+
+
+
+## Dekompozycja lime dla kilku obserwacji w zbiorze
+```{r}
+
+
+lime_1 <- predict_surrogate(
+  explainer=explainer, 
+  new_observation=blood[251,-5], 
+  n_features=4, 
+  n_permutations=1000,
+  type='lime')
+plot(lime_1)
+
+blood[251,]
+
+
+```
+W przypadku obserwacji numer 251 metoda wskazała pozytywny wpływ zmiennej *Time*, natomiast negatywny w przypadku pozostłych zmiennych. Model z bardzo dużym prawdopodobieństwem wskazał poprawną predykcje.
+
+
+```{r}
+
+lime_2 <- predict_surrogate(
+  explainer=explainer, 
+  new_observation=blood[1,-5], 
+  n_features=4, 
+  n_permutations=1000,
+  type='lime')
+plot(lime_2)
+
+blood[1,]
+
+
+```
+
+
+W powyższej obserwacji sytuacja jest odwrotna do poprzedniej. Wszystkie zmienne oprócz *Time* mają pozytywny wpływ na predykcje.
+```{r}
+
+lime_3 <- predict_surrogate(
+  explainer=explainer, 
+  new_observation=blood[155,-5], 
+  n_features=4, 
+  n_permutations=1000,
+  type='lime')
+plot(lime_3)
+
+blood[155,]
+
+
+```
+
+
+Dla obserwacji 155 metoda Lime wskazała pozytywny wpływ zmiennej *Time* oraz *Recency* natomiast negatywny, prawie identyczny *Frequency* oraz *Monetary*, co nie jest zaskoczeniem, gdyż z poprzedniej pracy domowej wiemy, że te zmienne są ze sobą mocno skorelowane.
+
+```{r}
+
+lime_4 <- predict_surrogate(
+  explainer=explainer, 
+  new_observation=blood[532,-5], 
+  n_features=4, 
+  n_permutations=1000,
+  type='lime')
+plot(lime_4)
+
+blood[532,]
+
+
+```
+
+W podanym przypadku sytuacja jest podobna do poprzedniej obserwacji. Rożnica polega na mniejszym wpływie zmiennych *negatywnych*.
+
+
+
+## Porównanie BreakDown z Lime
+
+```{r}
+
+lime_5 <- predict_surrogate(
+  explainer=explainer, 
+  new_observation=blood[422,-5], 
+  n_features=4, 
+  n_permutations=1000,
+  type='lime')
+plot(lime_5)
+
+
+bd <- predict_parts(explainer, new_observation=blood[422,-5])
+plot(bd)
+
+blood[422,]
+
+
+```
+
+Dla powyższej obserwacji zarówno metoda Lime jak i BreakDown wskazuje wszystkie zmienne jako negatywne. W przypadku BreakDown najbardziej wpływową zmienną jest *Recency*, natomiast z wykresu Lime można odczytać, że zmienne mają bardziej przybliżony wpływ.
+```{r}
+
+lime_6 <- predict_surrogate(
+  explainer=explainer, 
+  new_observation=blood[600,-5], 
+  n_features=4, 
+  n_permutations=1000,
+  type='lime')
+plot(lime_6)
+
+
+bd <- predict_parts(explainer, new_observation=blood[600,-5])
+plot(bd)
+
+blood[600,]
+
+
+```
+
+Dla obserwacji 600 metoda BreakDown wskazuje tylko jedną zmienną majać pozytwny wpływ, jest nią *Monetary*. Co ciekawe zmienne *Monetary* oraz *Frequency* mają przeciwny wpływ mimo, że sa bardzo mocno ze sobą skorelowane. Natomiast z metody Lime można zauważyc tą zależność. Obie zmienne, jako jedyne, mają dodatni wpływ na predykcje.
+
