@@ -1,0 +1,207 @@
+---
+title: "WB-XAI-2 - praca domowa 3"
+subtitle: "Mateusz Grzyb"
+output:
+  html_document:
+    df_print: paged
+---
+
+<br>
+
+![](https://static.turbosquid.com/Preview/2016/09/26__12_14_55/R0.pngE649D7B9-45F3-4207-B43D-8A06F77214CBLarge.jpg){width=25%}
+
+<br>
+
+## Wczytanie i obróbka danych oraz przygotowanie modelu
+
+Wczytane dane obrabiam w ten sam sposób, jak na poprzedniej pracy domowej. Model również tworzę w analogiczny sposób.
+
+```{r message=FALSE}
+# wczytanie bibliotek
+library(OpenML)
+
+# wczytanie danych
+blood <- getOMLDataSet(data.id = 1464)
+blood <- blood$data
+
+# obrobka wstępna 
+row.names(blood) <- NULL
+names(blood) <- c('Recency', 'Frequency', 'Monetary', 'Time', 'Donated')
+blood$Donated <- factor(ifelse(blood$Donated==2, 1, 0))
+blood <- blood[-3]
+
+# dodanie zaproponowanej ostatnio zmiennej Intensity
+blood_m <- cbind(
+  blood[c('Recency', 'Frequency')],
+  Intensity=pmin(blood$Frequency/pmax(blood$Time-blood$Recency, 1), 1),
+  blood['Donated'])
+
+# podglad ramki danych
+head(blood_m)
+```
+
+```{r message=FALSE}
+# wczytanie bibliotek
+library(mlr)
+library(PRROC)
+
+# przygotowanie modelu
+corr <- round(cor(blood_m[-4], method='spearman'), 2)
+c2 <- apply(corr, 1, FUN=function(x) {sum(x^2)})
+c2 <- c2/sum(c2)
+
+classif_task <- makeClassifTask(id='blood_m', data=blood_m, target='Donated')
+classif_lrn <- makeLearner('classif.ranger', predict.type='prob')
+
+model <- train(classif_lrn, classif_task)
+
+# diagnostyka modelu
+pred <- predict(model, classif_task)$data$prob.1
+
+fg <- pred[blood$Donated==1]
+bg <- pred[blood$Donated==0]
+
+roc <- roc.curve(scores.class0=fg, scores.class1=bg, curve=T)
+pr <- pr.curve(scores.class0=fg, scores.class1=bg, curve=T)
+```
+
+```{r}
+# wykres roc
+plot(roc)
+```
+
+```{r}
+# wykres pr
+plot(pr)
+```
+
+Model jest całkiem trafny.
+
+<br>
+
+## Właściwa część pracy domowej
+
+Stwórzmy najpierw instancję explainera.
+
+```{r message=FALSE}
+library(DALEX)
+library(DALEXtra)
+
+explainer <- explain(model=model, data=blood_m, y=as.numeric(blood$Donated), label='mlr.ranger', colorize=FALSE)
+```
+
+<br>
+
+Poniżej znajdują się rozwiązania poszczególnych podpunktów pracy domowej.
+
+"Dla wybranej obserwacji ze zbioru danych wylicz predykcję modelu."
+
+```{r}
+obs <- blood_m[342, ]
+obs
+```
+
+Pod obserwacją 342 kryje się osoba, którego swego czasu często (średnio raz na dwa miesiące) i wielokrotnie (dokładnie 38 razy) oddawała krew, ale nie robiła tego od niemal dwóch lat.
+
+```{r}
+pred <- predict(model, newdata=obs)
+pred$data
+```
+
+Model poprawnie i z dużą pewnością przewiduje, że osoba ta nie wróciła oddać krwi w marcu 2007.
+
+<br>
+
+"Dla wybranej obserwacji z punktu 1., wylicz dekompozycję predykcji modelu używając profili Ceteris Paribus"
+
+```{r fig.height=5, fig.width=10}
+model_predict <- predict_profile(explainer, new_observation=blood_m[342, 1:3], variable_splits_type='quantiles')
+plot(model_predict)
+```
+
+Wyjaśnienie Ceteris Paribus dla tej obserwacji pokazuje nam, że wyłącznie zmniejszenie zmiennej Recency ma w przypadku tej obserwacji znaczący wpływ. Jest to całkiem logiczne - nie ważne, jak swego czasu aktywna była dana osoba, ponieważ fakt, że nie oddawała krwi od niemal dwóch lat nie rokuje dobrze.
+
+<br>
+
+"Wybierz dwie obserwacje ze zbioru danych, które mają różne profile CP (na przykład: dla obserwacji A odpowiedź modelu rośnie wraz ze wzrostem wartości zmiennej, a dla obserwacji B maleje)."
+
+```{r}
+obs <- blood_m[c(43, 16), ]
+obs
+```
+
+Wybrałem dwie obserwacje, które posiadają takie samo niskie Recency i przeciętne Frequency, ale inne Intensity.
+
+```{r}
+blood[c(43, 16), ]
+```
+
+Różnica w Intensity wynika z faktu, że osoba za obserwacją 43 pierwszy raz oddała krew 11 miesięcy temu, a osoba za obserwacją 16 - 11 miesięcy temu.
+
+```{r}
+pred <- predict(model, newdata=obs)
+pred$data
+```
+
+Model poprawnie przewiduje, że obie osoby oddadzą krew ponownie w marcu 2007.
+
+<br>
+
+```{r fig.height=5, fig.width=10}
+model_predict <- predict_profile(explainer, new_observation=blood_m[43, 1:3], variable_splits_type='quantiles')
+plot(model_predict)
+```
+
+```{r fig.height=5, fig.width=10}
+model_predict <- predict_profile(explainer, new_observation=blood_m[16, 1:3], variable_splits_type='quantiles')
+plot(model_predict)
+```
+
+Obie obserwacje posiadają niemal idealną (z punktu widzenia predykcji) wartość Recency.
+
+Dla obserwacji 43 nieznaczne zwiększenie Intensity miałoby pozytywny (0.55 -> 0.75) wpływ na predykcję.
+
+Dla obserwacji 16 sytuacja jest odwrotna - nieznaczne zwiększenie Intensity miałoby negatywny (0.75 -> 0.6) wpływ na predykcję.
+
+Zgaduję, że może tutaj chodzić o coś w stylu wypalenia - osoby, które w krótkim czasie wielokrotnie oddawały krew mają większą szansę na porzucenie tej czynności, w porównaniu do osób, które robiły to w nieco spokojniejszym tempie.
+
+<br>
+
+```{r}
+a <- blood_m[blood_m$Recency==2 & blood$Time < 24 & blood_m$Intensity < 0.55 , 4] == 1
+b <- blood_m[blood_m$Recency==2 & blood$Time < 24 & blood_m$Intensity > 0.55 & blood$Time < 24, 4] == 1
+```
+
+```{r}
+cat(paste0(round(sum(a)/length(a), 2)*100, '% out of ', length(a), ' people with Time < 24 and Intensity < 0.55 did donate.\n'))
+```
+
+```{r}
+cat(paste0(round(sum(b)/length(b), 2)*100, '% out of ', length(b), ' people with Time < 24 and Intensity > 0.55 did donate.\n'))
+```
+
+Powyżej znajduje się próba potwierdzenia mojej teorii. Rzeczywiście coś może być na rzeczy.
+
+<br>
+
+Warto zwrócić uwagę, że jest to obserwacja, której nie możemy poczynić posługując się metodami SHAP czy LIME.
+
+```{r}
+sh <- predict_parts(explainer, new_observation=blood_m[16, 1:3], type='shap')
+plot(sh)
+```
+
+```{r}
+model_type.dalex_explainer <- DALEXtra::model_type.dalex_explainer
+predict_model.dalex_explainer <- DALEXtra::predict_model.dalex_explainer
+
+lime <- predict_surrogate(
+  explainer=explainer, 
+  new_observation=blood_m[16, ], 
+  n_features=3, 
+  n_permutations=1000,
+  type='lime'
+  )
+
+plot(lime)
+```
