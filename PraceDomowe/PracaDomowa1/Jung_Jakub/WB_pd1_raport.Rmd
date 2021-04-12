@@ -1,0 +1,93 @@
+---
+title: "WB XAI-2 PD1"
+author: "Jakub Jung"
+date: "28.03.2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE)
+```
+
+## R Markdown
+
+```{r, include = FALSE}
+library(DALEX)
+library(mlr3)
+
+diabetes <- read.csv("diabetes.csv")
+head(diabetes)
+diabetes$class[diabetes$class == "tested_positive"] <- 1
+diabetes$class[diabetes$class == "tested_negative"] <- 0
+diabetes$class <- as.numeric(diabetes$class)
+
+
+model <- ranger::ranger(class~., data = diabetes, classification = TRUE, probability = TRUE)
+
+
+explainer <- explain(model = model,
+                     data = diabetes[,-9],
+                     y = diabetes$class)
+```
+
+### 1. Zadanie
+
+Naszym zadaniem jest analiza tego w jaki sposób zmienne wpływają na decyzje podjęte przez model. Skorzystamy w tym celu z lasu losowego zaimplementowanego w pakiecie *ranger* oraz ze zbioru danych *diabetes*, w którym próbujemy przewidzieć, czy dana osoba ma cukrzycę.
+
+### 2. Przykładowa predykcja
+
+Zobaczmy predykcję dla pewnej obserwacji.
+
+```{r}
+predict(model, diabetes[5,])$predictions
+```
+
+Predykcja: ~80% dla wyniku pozytywnego, ~20% dla wyniku negatywnego.
+Sprawdźmy to.
+
+```{r}
+diabetes[5,9]
+```
+
+Faktycznie - wynik testu dla danej obserwacji (1) był pozytywny.
+
+### 3. Dekompozycja
+
+Sprawdźmy teraz, które zmienne najmocniej wpłynęły na ten wynik.
+
+```{r}
+pp_ranger_shap_1 <- predict_parts(explainer, new_observation = diabetes[5,], type = "shap", B = 10)
+plot(pp_ranger_shap_1)
+pp_ranger_bd_1 <- predict_parts(explainer, new_observation = diabetes[5,], type = "break_down")
+plot(pp_ranger_bd_1)
+```
+
+Dla danej obserwacji najistotniejszymi zmiennymi okazały się zmienne *mass* (oznaczająca wskaźnik BMI) oraz *plas* (oznaczająca poziom cukru we krwi w przeprowadzonym badaniu)
+
+### 4. Najistotniejsze zmienne
+
+Okazuje się jednak, że nie zawsze to te dwie zmienne mają największy wpływ na predykcję.
+
+```{r}
+pp_ranger_shap_2 <- predict_parts(explainer, new_observation = diabetes[17,], type = "shap", B = 10)
+plot(pp_ranger_shap_2)
+
+pp_ranger_shap_3 <- predict_parts(explainer, new_observation = diabetes[19,], type = "shap", B = 10)
+plot(pp_ranger_shap_3)
+```
+
+Przykładowo, dla obserwacji 17 najważniejsze okazały się zmienne *mass* i *age* (wiek), a dla obserwacji 19 *plas* i *pedi* (funkcja opisująca historię cukrzycy w rodzinie). Ogólniej - jeżeli dla zbioru danych nie ma konkretnych zmiennych, które mają zdecydowanie przeważający wpływ na finalną predykcję, to wartości pozostałych zmiennych mocno odbiegające od normy mogą mieć większe znaczenie. Oczywistym jest jednak, że dla większości obserwacji największy wpływ będzie miało kilka tych samych zmiennych.
+
+### 5. Konkretna wartość zmiennej a jej wpływ na predykcję
+
+Na przykładzie następnych wykresów można zauważyć, że ta sama wartość jednej zmiennej może mieć wpływ na finalną predykcję nie tylko o różnej sile, ale nawet zupełnie przeciwny. Tutaj, dla dwóch obserwacji o zmiennej *preg* (oznaczającej liczbę ciąż) równej 4, w jednym przypadku zmienna ta sprawia, że model zwiększa przewidywaną szansę na pozytywny wynik, a w drugim na odwrót.
+
+```{r}
+diabetes_filtered <- diabetes[diabetes$preg == 4,]
+pp_ranger_bd_2 <- predict_parts(explainer, new_observation = diabetes_filtered[1,], type = "break_down")
+plot(pp_ranger_bd_2)
+pp_ranger_bd_3 <- predict_parts(explainer, new_observation = diabetes_filtered[20,], type = "break_down")
+plot(pp_ranger_bd_3)
+```
+
+Wynika to stąd, że zmienne takie jak *preg* nie są jakimś bezwzględnym wskaźnikiem i patrzenie tylko na nie nie ma sensu. Dopiero osadzenie ich pośród innych danych przekazuje jakąś informację. Przykładowo, 4 ciąże w wieku 40 lat mogą nie być niczym niestandardowym i przez to nie wpływać mocno na predykcję, natomiast 4 ciąże w wieku 20 lat to rzadko spotykany przypadek, który może oznaczać zupełnie inny wpływ tej zmiennej. Dla dwóch obserwacji przedstawionych powyżej obserwacji różnica wieku nie jest jednak tak duża. W tym konkretnym przypadku różnica we wpływie zmiennej *preg* może wynikać z dużej rozbieżności wartości zmiennej *pedi* dla tych obserwacji, ponieważ liczba ciąży oraz historia cukrzycy w rodzinie mogą być powiązane.
