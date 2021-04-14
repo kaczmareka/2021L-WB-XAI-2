@@ -1,0 +1,209 @@
+---
+title: "Praca domowa nr 2"
+author: "Martyna Majchrzak"
+date: "7 04 2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+library(OpenML)
+library(mlr)
+library(DALEX)
+library(DALEXtra)
+library(knitr)
+library(ranger)
+set.seed(1)
+diabetes <- getOMLDataSet(data.id = 37L)
+diabetes <- diabetes$data
+```
+
+## Zbiór danych
+
+Zbiór danych Diabetes zawiera informacje o osobach chorych na cukrzycę.
+
+1. preg - ile razy dana osoba była w ciąży
+2. plas - stężenie glukozy w osoczu po 2h ustnego testu na tolerancję glukozy
+3. pres - ciśnienie rozkurczowe (mm Hg)
+4. skin - grubość skóry mierzona na tricepsie (mm)
+5. insu - 2-Hour serum insulin (mu U/ml)
+6. mass - index masy ciała BMI (waga w kg/(wzrost w m)^2)
+7. pedi - obciążenie genetyczne (Diabetes pedigree function)
+8. age - wiek (lata)
+9. class - zmienna celu o wartościach tested_negative oraz tested_positive
+
+## Rozkłady zmiennych
+
+```{r zmienne, fig.height=6, fig.width=9}
+library(ggplot2)
+library(gridExtra)
+variables <- names(diabetes[,-9])
+
+plots <- lapply(variables, function(variable){
+  ggplot(data=diabetes, aes_string(variable)) +
+    geom_boxplot(fill='darkred') +
+    ylab('')
+})
+
+grid.arrange(grobs=plots, ncol=3)
+```
+
+## Tworzenie modelu i explainera
+
+W rozwiązaniu zostanie użyty model Random Forest. Według danych OpenML  ( https://www.openml.org/t/37 ) osiąga on średnio największą wartość miary accuracy.
+
+```{r explainer}
+model_ranger <- ranger(class~., data = diabetes, classification = TRUE, probability = TRUE)
+
+explainer<- DALEX::explain(model = model_ranger,
+                         data = diabetes[,-9],
+                         y = as.numeric(diabetes$class=='tested_positive'),
+                    colorize = FALSE)
+
+```
+
+## Predykcja dla obserwacji 13
+
+Przyjrzyjmy się pacjentce ze szczęśliwym numerem 13.
+
+```{r}
+kable(diabetes[13,])
+```
+Jest to 57-latka która była w ciąży 10 razy i ma BMI 27,1 (nadwaga).
+
+```{r pred13}
+prediction13<-predict(model_ranger, diabetes[13,])
+prediction13$predictions
+```
+
+Ta osoba z prawdopodobieństwem ok. 0.75 została przypisana do klasy tested_negative (czyli 0.25 do tested_positive)
+
+## LIME
+
+```{r lime 13}
+model_type.dalex_explainer <- DALEXtra::model_type.dalex_explainer
+predict_model.dalex_explainer <- DALEXtra::predict_model.dalex_explainer
+lime_ranger13 <- predict_surrogate(
+  explainer = explainer,
+  new_observation = diabetes[13,-9], 
+  n_features = 3, 
+  n_permutations = 1000,
+  type = "lime")
+
+plot(lime_ranger13)
+
+```
+
+Według wyjaśnienia prawdopodobieństwo pozytywnego testu obniżał fakt, że pacjentka miała BMI poniżej 27,3, a podwyższała wartość funkcji obciążenia genetycznego większa od 0,626 i to, że pacjentka była w ciąży więcej niż 6 razy.
+
+Podejrzany wydaje się fakt, że mimo nadwagi zmienna mass obniżała tak znacznie ryzyko wystąpienia cukrzycy.
+Przyjrzyjmy się rozkładowi tej zmiennej.
+
+```{r boxlot mass}
+boxplot(diabetes$mass, horizontal = TRUE)
+mean(diabetes$mass)
+```
+
+Średnia zmiennej mass wynosi prawie 32, co oznacza otyłość, zdarzają się też przypadki powyżej 40, co oznacza otyłość kliniczną.
+
+![BMI chart](BMI_chart.jfif)
+
+Zatem nasza pacjentka na tym tle nie wypada tak źle.
+
+## LIME dla różnych obserwacji
+
+### Obserwacja 26
+
+```{r}
+kable(diabetes[26,])
+```
+
+Pacjentka ma 41 lat, była w ciąży 10 razy, ma BMI 31,1 i chorowała na cukrzycę.
+
+```{r}
+lime_ranger26 <- predict_surrogate(
+  explainer = explainer,
+  new_observation = diabetes[26,-9], 
+  n_features = 3, 
+  n_permutations = 1000,
+  type = "lime")
+
+plot(lime_ranger26)
+```
+
+Tą pacjentkę model z prawdopodobieństwem 65% zaklasyfikowałby jako chorą, na co wpływa ponownie duża liczba ciąży oraz wiek powyżej 29 lat. Tym razem wartość funkcji obciążenia genetycznego jest jednak dość niska, co obniża prawdopodobieństwo wystąpienia cukrzycy.
+
+### Obserwacja 39
+
+
+```{r}
+kable(diabetes[39,])
+```
+
+Pacjentka ma 27 lat, była w ciąży 2 razy, ma BMI 382, i chorowała na cukrzycę.
+
+```{r}
+lime_ranger39 <- predict_surrogate(
+  explainer = explainer,
+  new_observation = diabetes[39,-9], 
+  n_features = 3, 
+  n_permutations = 1000,
+  type = "lime")
+
+plot(lime_ranger39)
+```
+
+U tej pacjentki model nieprawidłowo przewidział to, czy pacjentka jest chora, ale był całkiem blisko (43%). Prawdopodobieństwo to bardzo zwiększyło wysokie BMI, ale niemal równie mocno obniżył niskie stężenie glukozy (`plas`, średnia ok.120). Bardzo nieznacznie zmniejszyło je też to, że była w ciąży tylko 2 razy.
+
+### Obserwacja 52
+
+
+```{r}
+kable(diabetes[52,])
+```
+
+Pacjentka ma 26 lat, była w ciąży 1 raz, ma BMI 24,2 (prawidłowe!), i nie chorowała na cukrzycę.
+
+```{r}
+lime_ranger52 <- predict_surrogate(
+  explainer = explainer,
+  new_observation = diabetes[52,-9], 
+  n_features = 3, 
+  n_permutations = 1000,
+  type = "lime")
+
+plot(lime_ranger52)
+```
+
+Model z dużą pewnością zakwalifikował tę pacjentkę jako zdrową. Wpływ miał na to niski index BMI, niskie stężenie glukozy i to, że była w ciąży tylko 1. 
+
+### Wnioski
+
+Dla różnych obserwacji istone były różne zmienne, lecz zawsze to była jedna spomiędzy: `mass`, `plas`, `age`, `preg` i `pedi`.
+
+ Zawsze też konsekwetnie niska/wysoka wartość danej zmiennej analogicznie wpływała na predykcję, dla wszystkich w tych 5 zmiennych im wyższa wartość tym wyższe prawdopodobieństwo zachorowania.
+ 
+## LIME oraz SHAP dla obserwacji 13
+
+Dopasujmy teraz LIME z 8 zamiast 3 zmiennych,aby łatwiej było porównać go z SHAP.
+
+```{r}
+lime_ranger13_all <- predict_surrogate(
+  explainer = explainer,
+  new_observation = diabetes[13,-9], 
+  n_features = 8, 
+  n_permutations = 1000,
+  type = "lime")
+plot(lime_ranger13_all)
+```
+
+```{r shap13}
+pp_ranger_shap_13 <- predict_parts(explainer, new_observation = diabetes[13,], type = "shap", B = 10)
+plot(pp_ranger_shap_13)
+
+```
+
+W obu wyjaśnieniach najbardziej pływającą na predykcję zmienną jest `mass`, o stosunkowo niskiej wartości. W obu przypadkach zmienne `preg` i `pedi` podwyższają prawdopodobieństwo zakwalifikowania pacjentki jako chorej.
+Wyraźną różnicę widać jednak w zmiennych:
+- `age` - według LIME wiek > 41 znacznie zwiększa ryzyko zachorowania, a według BreakDown wiek 57lat nieznacznie je obniża
+- `plas` - według LIME stężenie glukozy między 117 a 140 zwiększa ryzyko zachorowania, a według wynik 139 bardzo, bardzo niewiele, ale jednak obniża.

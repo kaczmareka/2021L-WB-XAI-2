@@ -1,0 +1,96 @@
+---
+title: "WB-XAI-2 Praca domowa 1"
+author: "Janus Dawid"
+date: "25 03 2021"
+output: html_document
+---
+
+
+## Wczytanie danych
+
+```{r}
+blood <- read.csv("D:/Studia/Projekty/R-projekty/blood.csv", 
+                   header = TRUE)
+
+head(blood)
+
+```
+
+## Informacje o danych
+* V1: Recency - months since last donation
+* V2: Frequency - total number of donation
+* V3: Monetary - total blood donated in c.c.
+* V4: Time - months since first donation)
+* Class: The target attribute is a binary variable representing whether he/she donated blood in March 2007 (2 stands for donating blood; 1 stands for not donating blood).
+
+## Zmiana nazw kolumn 
+
+```{r}
+
+names(blood) <- c("Recency", "Frequency", "Monetary", "Time", "Class")
+
+
+
+
+head(blood)
+
+```
+
+
+## Tworzenie modelu 
+
+```{r}
+library(DALEX)
+
+
+model<-model <- ranger::ranger(Class~., data = blood, classification = TRUE, probability = TRUE)
+
+predict(model, head(blood))$predictions
+
+head(blood)
+
+```
+
+
+## Utworzenie explainera
+
+```{r}
+
+explainer <- explain(model = model,
+                     data = blood[,-5],
+                     y = blood[,5])
+```
+
+
+## Wyświetlenie jednej obserwacji
+
+Przy wyświetleniu dekompozycji predykcji modelu danej obserwacji pokazywane jest prawdopodobieństwo na nieoddanie krwi przez daną osobe w marcu 2017 roku.
+
+```{r}
+
+
+pp_ranger_bd_1 <- predict_parts(explainer, new_observation = blood[1,], type="break_down", order=c("Recency", "Frequency", "Monetary", "Time", "Class"))
+plot(pp_ranger_bd_1)
+
+blood[1,5]
+
+
+```
+
+Model z prawdopodbieństwem okolo 75% wskazał, że dana osoba w Marcu 2017 odda krew. Możemy wyczytać z wykresu, iż 3 zmienne wpływają korzystnie na prawdopodobieństwo oddania krwi, natomiast tylko 1 przeciwnie. Największe znaczenie ma liczba oddań krwi oraz łaczna ilość oddanej krwi.
+
+
+## Podpunkt 3 oraz 4 pracy domowej 
+```{r}
+pp_ranger_bd_2 <- predict_parts(explainer, new_observation = blood[10,], type="break_down", order=c("Recency", "Frequency", "Monetary", "Time", "Class"))
+plot(pp_ranger_bd_2)
+```
+
+Dla powyżyszej obserwacji najważniejszymi zmiennymi są ilość oddań krwi oraz łączna oddana krew. Dla danej obserwacji model przewiduje z prawdopodobieństwem około 30% że osoba nie oddała krwi w Marcu 2017. W tym przypadku zmienna Frequency sprawia iż prawdopodobieństwo na oddanie krwi przez daną osobe w Marcu jest większe.
+
+```{r}
+pp_ranger_bd_3 <- predict_parts(explainer, new_observation = blood[251,], type="break_down", order=c("Recency", "Frequency", "Monetary", "Time", "Class"))
+plot(pp_ranger_bd_3)
+```
+
+Dla powyższej obserwacji najważniejsza zmienna to ilość miesięcy od ostataniego pobrania krwi, ponieważ jest to aż 11 miesięcy przyczynia się do to zwiększenia prawodpodobieństwa nie oddawania krwi w Marcu 2017 roku. Dla danej obserwacji model przewiduje z prawdopodobieństwem około  95% że osoba nie oddała krwi w Marcu 2017. W tym przypadku zmienna Frequency sprawia iż prawdopodobieństwo na oddanie krwi przez daną osobe w Marcu jest mniejsze.

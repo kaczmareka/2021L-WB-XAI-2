@@ -2,79 +2,137 @@
 title: "Warsztaty badawcze - XAI - Praca domowa 1"
 author: "Paulina Jaszczuk"
 date: "23 03 2021"
-output: pdf_document
----
+output: html_document
 
+---
 ```{r setup, include=FALSE}
 library(mlr)
 library(DALEX)
 library(DALEXtra)
+```
 
-df <- read.csv("C:\\Users\\pauli\\warsztaty_badawcze\\lab3\\pd1\\german_credit.csv")
+## Wczytanie danych
+
+```{r data}
+df <- read.csv("C:\\Users\\pauli\\warsztaty_badawcze\\lab3\\pd1\\Paulina_Jaszczuk\\german_credit.csv")
+
 class_numerical <- model.matrix(~ 0 + class, df)
 df$class <- class_numerical[,"classgood"]
+```
+
+Zamieniłam zmienną target z wartości typu 'character' na wartości numeryczne 0 i 1, gdzie 0 odpowiada klasie 'bad', zaś 1 klasie 'good'. 
+
+## Analiza zbioru danych
+
+```{r colnames}
+colnames(df)
+```
+### Opis kolumn
+
+1. Status of existing checking account, in Deutsche Mark.
+2. Duration in months
+3. Credit history (credits taken, paid back duly, delays, critical accounts)
+4. Purpose of the credit (car, television,...)
+5. Credit amount
+6. Status of savings account/bonds, in Deutsche Mark.
+7. Present employment, in number of years.
+8. Installment rate in percentage of disposable income
+9. Personal status (married, single,...) and sex
+10. Other debtors / guarantors
+11. Present residence since X years
+12. Property (e.g. real estate)
+13. Age in years
+14. Other installment plans (banks, stores)
+15. Housing (rent, own,...)
+16. Number of existing credits at this bank
+17. Job
+18. Number of people being liable to provide maintenance for
+19. Telephone (yes,no)
+20. Foreign worker (yes,no)
+
+### Pzykładowa obserwacja
+
+```{r data_example}
+head(df, 2)
+```
+
+Nasz zbiór dotyczy ryzyka kredytowego konkretnych klientów banku w Niemczech. Na podstawie atrybutów takich jak m.in. wiek czy aktualny stan konta klasyfikuje ich ryzyko binarnie jako 'good' lub 'bad' (po modyfikacji zbioru odpowiednio 1 i 0).
+
+## Przygotowanie modelu i explainera
+
+```{r model_explainer, results=FALSE}
 model <- ranger::ranger(class~., data = df, classification = TRUE, probability = TRUE)
+
 explainer <- explain(model = model, data = df, y = df$class)
 ```
 
 ## Predykcja dla wybranej obserwacji
 
-### Obserwacja 1
+#### Obserwacja 1
 
-```{r two}
+Spójrzmy, do której klasy nasz model przyporządkował pierwszą obserwację. 
+```{r pred_first}
 predict(model, df[1,])$predictions
 ```
 
+Pierwsza kolumna odpowiada prawdopodobieństwu klasy 1 czyli 'good', zaś druga prowdopodobieństwo klasy 0 czyli 'bad'.
 
-```{r three}
+A teraz spójrzmy do jakiej klasy w rzeczywistości należy nasza pierwsza obserwacja:
+
+```{r actual_first}
 df[1, "class"]
 ```
 
 ## Dekompozycja obserwacji
 
-### Obserwacja 1
+### Break down
 
+#### Obserwacja 1
 
-```{r four}
+```{r break_down_1}
 decomp <- predict_parts(explainer, new_observation = df[1,])
 plot(decomp)
 ```
 
-```{r five}
+### Shap
+
+```{r shap_1}
 decomp_shap <- predict_parts(explainer, new_observation = df[1,], type = "shap", B = 10)
 plot(decomp_shap)
 ```
 
-Jak widać na wykresie dla modelu najważniejsze zmienne to 'checking_status' mniejsze od zera, 'credit_history' równe 'critical/other existing credit' i `duration` równe 6. 
+Wykresy pokazują predykcję dla wartości 'bad'. 
+
+Jak widać na wykresach dla modelu najważniejsze zmienne to 'checking_status' mniejsze od zera, `credit_history` równe `critical/other existing credit`, które zwiększają predykcję oraz `duration` równe 6, która ją zmniejsza. Jest to zgodne z naszą intuicją - ujemny aktualny status rachunku oraz posiadanie kolejnego kredytu znacząco zwiększają ryzyko, zaś stosunkowo krótki okres sześciu miesięcy je zmniejsza. 
 
 ## Obserwacje o różnych zmiennych znaczących
 
-### Obserwacja 305
+#### Obserwacja 305
 
-```{r six}
+```{r break_down_2}
 decomp2 <- predict_parts(explainer, new_observation = df[305,])
 plot(decomp2)
 ```
 
-Jak widzimy na wykresie najważniejsze zmienne dla tej cechy to 'duration' równe 48 oraz 'credit_amount' równe 10130 w przeciwieństwie do zmiennej nr 1 zaprezentowanej powyżej.
+Jak widzimy na wykresie najważniejsze zmienne dla tej cechy to `duration` równe 48 oraz `credit_amount` równe 10130 w przeciwieństwie do zmiennej nr 1 zaprezentowanej powyżej. W tym wypadku to długi okres kredytu oraz jego wartość znacząco przyczyniają się do wzrostu ryzyka. 
 
 ## Obserwacje o przeciwnych efektach tych samych zmienych
 
-### Obserwacja 305
+#### Obserwacja 305
 
-```{r seven}
+```{r breadk_down_3}
 decomp2 <- predict_parts(explainer, new_observation = df[305,])
 plot(decomp2)
 ```
 
-### Obserwacja 1
+#### Obserwacja 1
 
-```{r eight}
+```{r break_down_4}
 decomp2 <- predict_parts(explainer, new_observation = df[1,])
 plot(decomp2)
 ```
 
-Zmienna 'credit_history' o wartości 'critical/other existing credit' dla obu obserwacji ma dla obserwacji nr 305 efekt negatywny, zaś dla zmiennej nr 1 efekt pozytywny.
+Zmienna `duration` o wartości równej 48 znacząco zwiększa ryzyko kredytowe klienta nr 305, zaś ta sama zmienna o wartości 6 zmniejsza ryzyko dla kienta nr 1. Kolejny raz odpowiada to naszej intuicji - im dłuższy okres kredytu, tym większe ryzyko. Ciekawy natomiast jest wpływ zmiennej `credit_history`, która mimo takiej samej wartości - 'critical/other existing credit' dla obserwacji nr 305 nieznacznie zmniejsza ryzyko kredytowe, natomiast dla zmiennej nr 1 zdecydowanie je zwiększa. Ten wynik budzi nasze wątpliwości. Może to być skutkiem kolejności w jakiej zmienne ukazane są na wykresie - dla kienta nr 305 inne zmienne już znacząco to ryzyko podniosły.
 
 ## Podsumowanie
-Na wartość predykcji wpływa wiele czynników, czasami są one intuicyjne i logiczne, a niekiedy wręcz przeciwnie. Różne zmienne, mimi tej samej wartości, mogą różnie wpływać na konkretne obserwacje (raz "pozytywnie", raz "negatywnie"). Warto również zauważyć, że na predykcję ma wpływ zbiór czynników, nie one pojedynczo. 
+Na wartość predykcji wpływa wiele czynników, czasami są one intuicyjne i logiczne, a niekiedy wręcz przeciwnie (jak na przykład zmienna `credit_status` w ostatnim przykładzie). Różne zmienne, mimo tej samej wartości, mogą różnie wpływać na konkretne obserwacje (raz "pozytywnie", raz "negatywnie"). Należy mieć na uwadze, że w metodzie `Break down` znaczenie ma kolejność zmiennych. Zmienne również mają różny wpływ na predykcję, gdy przyglądamy się im osobno oraz gdy rozważamy je razem z innymi zmiennymi.
