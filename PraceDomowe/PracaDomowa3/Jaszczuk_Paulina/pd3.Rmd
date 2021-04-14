@@ -1,0 +1,101 @@
+---
+title: "Warsztaty badawcze - XAI - Praca domowa 3"
+author: "Paulina Jaszczuk"
+date: "15 04 2021"
+output: html_document
+---
+
+
+```{r setup, include=FALSE, warning=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(mlr)
+library(DALEX)
+library(DALEXtra)
+```
+
+## Wczytanie danych
+
+```{r data}
+df <- read.csv("german_credit.csv")
+
+class_numerical <- model.matrix(~ 0 + class, df)
+df$class <- class_numerical[,"classgood"]
+```
+
+Dane zostały przekształcone analogicznie jak w pracy domowej 1. 
+
+## Przygotowanie modelu i explainera
+
+```{r model_explainer, results=FALSE}
+model <- ranger::ranger(class~., data = df, classification = TRUE, probability = TRUE)
+
+explainer <- DALEX::explain(model = model,
+                     data = df[,-21],
+                     y = df$class)
+```
+
+## Predykcja dla wybranej obserwacji
+
+#### Obserwacja 77
+
+Spójrzmy, do której klasy nasz model przyporządkował 77. obserwację. 
+
+```{r pred_77}
+obs_77 = df[77, -21]
+predict(model, obs_77)$predictions
+```
+
+Pierwsza kolumna odpowiada prawdopodobieństwu klasy 1 czyli 'good', zaś druga prowdopodobieństwo klasy 0 czyli 'bad'.
+
+A teraz spójrzmy do jakiej klasy w rzeczywistości należy nasza 77. obserwacja:
+
+```{r actual_77}
+df[77, "class"]
+```
+
+Jak widać, nasz model poprawnie przewidział klasę obserwacji.
+
+## Dekompozycja predykcji z użyciem profili Cateris Paribus
+
+Predykcja dotyczy klasy 'bad'.
+
+#### Obserwacja 77
+
+```{r cp_77, warning=FALSE}
+cp_obs_77 <- predict_profile(explainer, obs_77, variables = c('age', 'duration', 'credit_amount'))
+plot(cp_obs_77, variables = c('age', 'duration', 'credit_amount'))
+```
+
+Wyjaśnienie Cateris Paribus dla obserwacji 77 mówi, że zwiększenie zmiennych `credit amount` i `duration` miałyby istotny wpływ na predykcję - zwiększyłyby prawdopodobieństwo klasy 'bad'. Wyjaśnienia zgodne są z logiką - im dłuższy kredyt i im wyższa jego wartość tym większe ryzyko kredytowe.
+
+## Obserwacje o różnych profilach CP
+
+Przyjrzyjmy się raz jeszcze obserwacji nr 77 i porównajmy ją z obserwacją nr 106
+
+#### Obserwacja 77
+
+```{r actual_77_no2}
+df[77, c(2, 5, 13, 21)]
+```
+
+#### Obserwacja 106
+
+```{r actual_106}
+df[106, c(2, 5, 13, 21)]
+```
+
+Obserwacja nr 106 należy do klasy 'bad'
+
+```{r pred_106}
+obs_106 = df[106, -21]
+predict(model, obs_106)$predictions
+```
+
+Jak widzimy, nasz model dobrze sklasyfikował obserwację.
+
+```{r cp_106, warning=FALSE}
+cp_obs_106 <- predict_profile(explainer, obs_106, variables = c('age', 'duration', 'credit_amount'))
+plot(cp_obs_106, variables = c('age', 'duration', 'credit_amount'))
+```
+
+Porównajmy profile CP dla zmiennych nr 77 i 106. Obie obserwacje należą do klasy 'bad' i tak też sklasyfikował je nasz model. Jadnak przyglądając się uważnie profilom CP możemy zauważyć, że dla obserwacji nr 106 wzrost długości kredytu (cecha `duration`) obniżyłby predykcję modelu, zaś dla obserwacji nr 77 zwiększyłby ją. Może to być spowodowane wpływem innej zmiennej - `credit amount`. Dla obserwacji nr 77 cecha ta ma wartość 3965, zaś dla nr 106 - 11938, więc bardzo dużą. W tym wypadku rozłożenie płatności na dłuższy okres rzeczywiście mogłoby zmniejszyć ryzyko kredytowe. 
