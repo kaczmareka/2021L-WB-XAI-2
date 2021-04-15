@@ -1,0 +1,127 @@
+---
+title: "WB-XAI-2 Praca domowa 3"
+author: "Janus Dawid"
+date: "25 03 2021"
+output: html_document
+---
+
+
+## Wczytanie danych
+
+```{r,echo=FALSE, results='hide', message=FALSE,warning=FALSE}
+library(lime)
+library(DALEX)
+library(DALEXtra)
+library(mlr)
+library(dplyr)
+
+
+```
+
+```{r}
+
+
+blood <- read.csv("D:/Studia/Projekty/R-projekty/blood.csv", 
+                   header = TRUE)
+
+head(blood)
+
+```
+
+## Informacje o danych
+* V1: Recency - months since last donation
+* V2: Frequency - total number of donation
+* V3: Monetary - total blood donated in c.c.
+* V4: Time - months since first donation)
+* Class: The target attribute is a binary variable representing whether he/she donated blood in March 2007 (2 stands for donating blood; 1 stands for not donating blood).
+
+## Zmiana nazw kolumn 
+
+```{r}
+
+
+names(blood) <- c("Recency", "Frequency", "Monetary", "Time", "Class")
+
+blood<-blood %>% mutate(Class=as.integer(Class-1))
+
+
+head(blood)
+
+```
+
+
+## Tworzenie modelu 
+
+```{r}
+
+
+classif_task <- makeClassifTask(data = blood, target = "Class")
+classif_lrn <- makeLearner("classif.ranger", predict.type = "prob")
+model_mlr <- train(classif_lrn, classif_task)
+
+```
+
+
+## Utworzenie explainera
+
+```{r}
+
+explainer <- explain(model = model_mlr,
+                     data = blood[,-5],
+                     y = blood[,5])
+```
+
+
+## Wyświetlenie jednej obserwacji
+
+```{r}
+
+prep  <-predict(model_mlr, newdata = blood[1,])$data$prob.1
+prep
+blood[1,5]
+
+```
+
+
+
+## Dekompozycja predykcji modelu Ceteris Paribus dla wybranej obserwacji
+```{r}
+
+
+cp_2 <- predict_profile(explainer, blood[1,])
+plot(cp_2)
+
+
+
+
+```
+
+Obserwacja numer 1 ma dużą wartość zmiennych *Frequency*, *Monetary* oraz *Time*, natomiast małe *Recency*. Co ciekawe predykcja modelu dla tej obserwacji różni sie bardzo mało w zależności od zmiennej *Time*. Możliwe, że wpływa na to duża wartość zmiennych *Monetary* oraz *Frequency* i czas od pierwszego oddania krwi nie jest już taki ważny.
+
+## Porównanie dwóch obserwacji
+
+```{r}
+
+cp_1 <- predict_profile(explainer, blood[1,])
+plot(cp_1)
+
+
+
+
+```
+
+
+
+```{r}
+
+cp_2 <- predict_profile(explainer, blood[532,])
+plot(cp_2)
+
+
+
+
+```
+
+
+Patrząc na obie obserwacji od razu widać zupełnie inny kształt wykresu *Time*. W przypadku obserwacji pierwszej wykres jest praktycznie stały. Sytuacja przedstawia sie inaczej w drugiej obserwacji. Widzimy duży spadek predykcji, gdy *Time* wynosi 20, a następnie waha sie w przedziale 0.0-0.2. Prawdopodobnie wpływ na różnice tych 2 wykresów miały zmienne *Frequency* oraz *Monetary*. W przypadku obserwacji pierwszej były one duże, więc czas od pierwszego oddania krwi nie jest aż tak znaczący, przeciwnie do sytuacji w obserwacji 2. 
+
