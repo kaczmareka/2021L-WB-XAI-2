@@ -13099,60 +13099,15 @@ Skomentuj poszczególne wyniki uzyskane w powyższych punktach.
 <div class="prompt input_prompt">In&nbsp;[1]:</div>
 <div class="inner_cell">
     <div class="input_area">
-<div class=" highlight hl-r"><pre><span></span><span class="nf">library</span><span class="p">(</span><span class="n">OpenML</span><span class="p">)</span>
-<span class="nf">library</span><span class="p">(</span><span class="n">mlr</span><span class="p">)</span>
-<span class="nf">library</span><span class="p">(</span><span class="n">pROC</span><span class="p">)</span>
-<span class="nf">library</span><span class="p">(</span><span class="n">plyr</span><span class="p">)</span>
+<div class=" highlight hl-r"><pre><span></span><span class="nf">suppressWarnings</span><span class="p">(</span><span class="nf">suppressMessages</span><span class="p">(</span><span class="nf">library</span><span class="p">(</span><span class="n">OpenML</span><span class="p">)))</span>
+<span class="nf">suppressWarnings</span><span class="p">(</span><span class="nf">suppressMessages</span><span class="p">(</span><span class="nf">library</span><span class="p">(</span><span class="n">mlr</span><span class="p">)))</span>
+<span class="nf">suppressWarnings</span><span class="p">(</span><span class="nf">suppressMessages</span><span class="p">(</span><span class="nf">library</span><span class="p">(</span><span class="n">pROC</span><span class="p">)))</span>
+<span class="nf">suppressWarnings</span><span class="p">(</span><span class="nf">suppressMessages</span><span class="p">(</span><span class="nf">library</span><span class="p">(</span><span class="n">plyr</span><span class="p">)))</span>
 
 <span class="nf">set.seed</span><span class="p">(</span><span class="m">4</span><span class="p">)</span>
 </pre></div>
 
     </div>
-</div>
-</div>
-
-<div class="output_wrapper">
-<div class="output">
-
-
-<div class="output_area">
-
-    <div class="prompt"></div>
-
-
-<div class="output_subarea output_stream output_stderr output_text">
-<pre>Warning message:
-&#34;package &#39;OpenML&#39; was built under R version 4.0.4&#34;
-Warning message:
-&#34;package &#39;mlr&#39; was built under R version 4.0.4&#34;
-Loading required package: ParamHelpers
-
-Warning message:
-&#34;package &#39;ParamHelpers&#39; was built under R version 4.0.4&#34;
-Warning message: &#39;mlr&#39; is in &#39;maintenance-only&#39; mode since July 2019.
-Future development will only happen in &#39;mlr3&#39;
-(&lt;https://mlr3.mlr-org.com&gt;). Due to the focus on &#39;mlr3&#39; there might be
-uncaught bugs meanwhile in {mlr} - please consider switching.
-
-Warning message:
-&#34;package &#39;pROC&#39; was built under R version 4.0.4&#34;
-Type &#39;citation(&#34;pROC&#34;)&#39; for a citation.
-
-
-Attaching package: &#39;pROC&#39;
-
-
-The following objects are masked from &#39;package:stats&#39;:
-
-    cov, smooth, var
-
-
-Warning message:
-&#34;package &#39;plyr&#39; was built under R version 4.0.4&#34;
-</pre>
-</div>
-</div>
-
 </div>
 </div>
 
@@ -13162,7 +13117,7 @@ Warning message:
 <div class="prompt input_prompt">In&nbsp;[2]:</div>
 <div class="inner_cell">
     <div class="input_area">
-<div class=" highlight hl-r"><pre><span></span><span class="n">def</span> <span class="o">&lt;-</span> <span class="nf">getOMLDataSet</span><span class="p">(</span><span class="n">data.id</span> <span class="o">=</span> <span class="m">37</span><span class="p">)</span>
+<div class=" highlight hl-r"><pre><span></span><span class="n">def</span> <span class="o">&lt;-</span> <span class="nf">suppressWarnings</span><span class="p">(</span><span class="nf">suppressMessages</span><span class="p">(</span><span class="nf">getOMLDataSet</span><span class="p">(</span><span class="n">data.id</span> <span class="o">=</span> <span class="m">37</span><span class="p">)))</span>
 <span class="n">def</span> <span class="o">&lt;-</span> <span class="n">def</span><span class="o">$</span><span class="n">data</span>
 <span class="n">def</span><span class="o">$</span><span class="n">class</span> <span class="o">&lt;-</span> <span class="nf">mapvalues</span><span class="p">(</span><span class="n">def</span><span class="o">$</span><span class="n">class</span><span class="p">,</span> 
           <span class="n">from</span><span class="o">=</span><span class="nf">c</span><span class="p">(</span><span class="s">&quot;tested_positive&quot;</span><span class="p">,</span><span class="s">&quot;tested_negative&quot;</span><span class="p">),</span> 
@@ -13177,22 +13132,6 @@ Warning message:
 <div class="output_wrapper">
 <div class="output">
 
-
-<div class="output_area">
-
-    <div class="prompt"></div>
-
-
-<div class="output_subarea output_stream output_stderr output_text">
-<pre>Downloading from &#39;http://www.openml.org/api/v1/data/37&#39; to &#39;C:\Users\Speak\AppData\Local\Temp\RtmpwnUDt6\cache\datasets\37\description.xml&#39;.
-
-Downloading from &#39;https://www.openml.org/data/v1/download/37/diabetes.arff&#39; to &#39;C:\Users\Speak\AppData\Local\Temp\RtmpwnUDt6\cache\datasets\37\dataset.arff&#39;
-
-Loading required package: readr
-
-</pre>
-</div>
-</div>
 
 <div class="output_area">
 
@@ -13301,6 +13240,14 @@ Loading required package: readr
 </div>
 
 </div>
+<div class="cell border-box-sizing text_cell rendered"><div class="prompt input_prompt">
+</div><div class="inner_cell">
+<div class="text_cell_render border-box-sizing rendered_html">
+<p>Jeden z lepszych gotowych modeli z OpenML</p>
+
+</div>
+</div>
+</div>
 <div class="cell border-box-sizing code_cell rendered">
 <div class="input">
 <div class="prompt input_prompt">In&nbsp;[6]:</div>
@@ -13371,7 +13318,6 @@ Loading required package: readr
     <div class="input_area">
 <div class=" highlight hl-r"><pre><span></span><span class="n">pred_r</span> <span class="o">&lt;-</span> <span class="nf">predict</span><span class="p">(</span><span class="n">model</span><span class="p">,</span> <span class="n">newdata</span> <span class="o">=</span> <span class="n">r</span><span class="p">)</span><span class="o">$</span><span class="n">data</span><span class="o">$</span><span class="n">prob.0</span>
 <span class="n">pred_r</span>
-<span class="c1"># Dobrze przewiduje model ten rekord</span>
 </pre></div>
 
     </div>
@@ -13401,6 +13347,13 @@ Loading required package: readr
 <div class="cell border-box-sizing text_cell rendered"><div class="prompt input_prompt">
 </div><div class="inner_cell">
 <div class="text_cell_render border-box-sizing rendered_html">
+<h3 id="Model-dobrze-przewiduje-ten-rekord">Model dobrze przewiduje ten rekord<a class="anchor-link" href="#Model-dobrze-przewiduje-ten-rekord">&#182;</a></h3>
+</div>
+</div>
+</div>
+<div class="cell border-box-sizing text_cell rendered"><div class="prompt input_prompt">
+</div><div class="inner_cell">
+<div class="text_cell_render border-box-sizing rendered_html">
 <h1 id="Dla-wybranej-obserwacji-z-punktu-1.,-wylicz-dekompozycj&#281;-predykcji-modelu-u&#380;ywaj&#261;c-SHAP,-Break-Down-lub-obie">Dla wybranej obserwacji z punktu 1., wylicz dekompozycj&#281; predykcji modelu u&#380;ywaj&#261;c SHAP, Break Down lub obie<a class="anchor-link" href="#Dla-wybranej-obserwacji-z-punktu-1.,-wylicz-dekompozycj&#281;-predykcji-modelu-u&#380;ywaj&#261;c-SHAP,-Break-Down-lub-obie">&#182;</a></h1>
 </div>
 </div>
@@ -13410,36 +13363,11 @@ Loading required package: readr
 <div class="prompt input_prompt">In&nbsp;[9]:</div>
 <div class="inner_cell">
     <div class="input_area">
-<div class=" highlight hl-r"><pre><span></span><span class="nf">library</span><span class="p">(</span><span class="n">DALEX</span><span class="p">)</span>
-<span class="nf">library</span><span class="p">(</span><span class="n">DALEXtra</span><span class="p">)</span>
+<div class=" highlight hl-r"><pre><span></span><span class="nf">suppressWarnings</span><span class="p">(</span><span class="nf">suppressMessages</span><span class="p">(</span><span class="nf">library</span><span class="p">(</span><span class="n">DALEX</span><span class="p">)))</span>
+<span class="nf">suppressWarnings</span><span class="p">(</span><span class="nf">suppressMessages</span><span class="p">(</span><span class="nf">library</span><span class="p">(</span><span class="n">DALEXtra</span><span class="p">)))</span>
 </pre></div>
 
     </div>
-</div>
-</div>
-
-<div class="output_wrapper">
-<div class="output">
-
-
-<div class="output_area">
-
-    <div class="prompt"></div>
-
-
-<div class="output_subarea output_stream output_stderr output_text">
-<pre>Welcome to DALEX (version: 2.0.1).
-Find examples and detailed introduction at: https://pbiecek.github.io/ema/
-
-
-Warning message:
-&#34;package &#39;DALEXtra&#39; was built under R version 4.0.4&#34;
-Anaconda not found on your computer. Conda related functionality such as create_env.R and condaenv and yml parameters from explain_scikitlearn will not be available
-
-</pre>
-</div>
-</div>
-
 </div>
 </div>
 
@@ -13495,8 +13423,6 @@ Anaconda not found on your computer. Conda related functionality such as create_
 <span class="nf">plot</span><span class="p">(</span><span class="n">pp_ranger</span><span class="p">)</span>
 <span class="n">pp_ranger</span> <span class="o">&lt;-</span> <span class="nf">predict_parts</span><span class="p">(</span><span class="n">explainer</span><span class="p">,</span> <span class="n">new_observation</span> <span class="o">=</span> <span class="n">r</span><span class="p">,</span> <span class="n">type</span> <span class="o">=</span> <span class="s">&quot;shap&quot;</span><span class="p">,</span> <span class="n">B</span><span class="o">=</span><span class="m">10</span><span class="p">)</span>
 <span class="nf">plot</span><span class="p">(</span><span class="n">pp_ranger</span><span class="p">)</span>
-
-<span class="c1"># wartość zmiennej plas = 88 jak i wiek w okolicy 23 lat, znacząco zmniejszają szansę na to, że dany czlowiek ma cukrzyce</span>
 </pre></div>
 
     </div>
@@ -13945,6 +13871,13 @@ height=420
 <div class="cell border-box-sizing text_cell rendered"><div class="prompt input_prompt">
 </div><div class="inner_cell">
 <div class="text_cell_render border-box-sizing rendered_html">
+<h3 id="warto&#347;&#263;-zmiennej-plas-=-88-jak-i-wiek-w-okolicy-23-lat,-znacz&#261;co-zmniejszaj&#261;-szans&#281;-na-to,-&#380;e-dany-czlowiek-ma-cukrzyce-(lokalnie)">warto&#347;&#263; zmiennej plas = 88 jak i wiek w okolicy 23 lat, znacz&#261;co zmniejszaj&#261; szans&#281; na to, &#380;e dany czlowiek ma cukrzyce (lokalnie)<a class="anchor-link" href="#warto&#347;&#263;-zmiennej-plas-=-88-jak-i-wiek-w-okolicy-23-lat,-znacz&#261;co-zmniejszaj&#261;-szans&#281;-na-to,-&#380;e-dany-czlowiek-ma-cukrzyce-(lokalnie)">&#182;</a></h3>
+</div>
+</div>
+</div>
+<div class="cell border-box-sizing text_cell rendered"><div class="prompt input_prompt">
+</div><div class="inner_cell">
+<div class="text_cell_render border-box-sizing rendered_html">
 <h1 id="Znajd&#378;-dwie-obserwacje-ze-zbioru-danych,-kt&#243;re-maj&#261;-dla-tych-samych-zmiennych-inne-efekty">Znajd&#378; dwie obserwacje ze zbioru danych, kt&#243;re maj&#261; dla tych samych zmiennych inne efekty<a class="anchor-link" href="#Znajd&#378;-dwie-obserwacje-ze-zbioru-danych,-kt&#243;re-maj&#261;-dla-tych-samych-zmiennych-inne-efekty">&#182;</a></h1>
 </div>
 </div>
@@ -13958,8 +13891,6 @@ height=420
 <span class="nf">plot</span><span class="p">(</span><span class="n">pp_ranger</span><span class="p">)</span>
 <span class="n">pp_ranger</span> <span class="o">&lt;-</span> <span class="nf">predict_parts</span><span class="p">(</span><span class="n">explainer</span><span class="p">,</span> <span class="n">new_observation</span> <span class="o">=</span> <span class="n">test</span><span class="p">[</span><span class="m">2</span><span class="p">,],</span> <span class="n">type</span> <span class="o">=</span> <span class="s">&quot;shap&quot;</span><span class="p">,</span> <span class="n">B</span><span class="o">=</span><span class="m">10</span><span class="p">)</span>
 <span class="nf">plot</span><span class="p">(</span><span class="n">pp_ranger</span><span class="p">)</span>
-
-<span class="c1">#mass, plas, pedi, insu, skin wpływają przeciwnie na prawdopodobieństwo wyniku testu w poniższych obserwacjach</span>
 </pre></div>
 
     </div>
@@ -14351,6 +14282,13 @@ height=420
 <div class="cell border-box-sizing text_cell rendered"><div class="prompt input_prompt">
 </div><div class="inner_cell">
 <div class="text_cell_render border-box-sizing rendered_html">
+<h3 id="mass,-plas,-pedi,-insu,-skin-wp&#322;ywaj&#261;-przeciwnie-na-prawdopodobie&#324;stwo-wyniku-testu-w-powy&#380;szych-obserwacjach">mass, plas, pedi, insu, skin wp&#322;ywaj&#261; przeciwnie na prawdopodobie&#324;stwo wyniku testu w powy&#380;szych obserwacjach<a class="anchor-link" href="#mass,-plas,-pedi,-insu,-skin-wp&#322;ywaj&#261;-przeciwnie-na-prawdopodobie&#324;stwo-wyniku-testu-w-powy&#380;szych-obserwacjach">&#182;</a></h3>
+</div>
+</div>
+</div>
+<div class="cell border-box-sizing text_cell rendered"><div class="prompt input_prompt">
+</div><div class="inner_cell">
+<div class="text_cell_render border-box-sizing rendered_html">
 <h1 id="Wybierz-dwie-obserwacje-ze-zbioru-danych,-kt&#243;re-maj&#261;-inne-najwa&#380;niejsze-zmienne">Wybierz dwie obserwacje ze zbioru danych, kt&#243;re maj&#261; inne najwa&#380;niejsze zmienne<a class="anchor-link" href="#Wybierz-dwie-obserwacje-ze-zbioru-danych,-kt&#243;re-maj&#261;-inne-najwa&#380;niejsze-zmienne">&#182;</a></h1>
 </div>
 </div>
@@ -14364,8 +14302,6 @@ height=420
 <span class="nf">plot</span><span class="p">(</span><span class="n">pp_ranger</span><span class="p">)</span>
 <span class="n">pp_ranger</span> <span class="o">&lt;-</span> <span class="nf">predict_parts</span><span class="p">(</span><span class="n">explainer</span><span class="p">,</span> <span class="n">new_observation</span> <span class="o">=</span> <span class="n">test</span><span class="p">[</span><span class="m">5</span><span class="p">,],</span> <span class="n">type</span> <span class="o">=</span> <span class="s">&quot;shap&quot;</span><span class="p">,</span> <span class="n">B</span><span class="o">=</span><span class="m">10</span><span class="p">)</span>
 <span class="nf">plot</span><span class="p">(</span><span class="n">pp_ranger</span><span class="p">)</span>
-
-<span class="c1">#zmienne plas, mass i pedi mają znaczącą różnice wielkości wpływu na wynik w tych obserwacjach</span>
 </pre></div>
 
     </div>
@@ -14710,18 +14646,19 @@ height=420
 </div>
 
 </div>
-<div class="cell border-box-sizing code_cell rendered">
-<div class="input">
-<div class="prompt input_prompt">In&nbsp;[14]:</div>
-<div class="inner_cell">
-    <div class="input_area">
-<div class=" highlight hl-r"><pre><span></span><span class="c1">#Wpływ zmiennej na predykcję zależy nie tylko od jej wartości ale również od wartości innych zmiennych</span>
-</pre></div>
-
-    </div>
+<div class="cell border-box-sizing text_cell rendered"><div class="prompt input_prompt">
+</div><div class="inner_cell">
+<div class="text_cell_render border-box-sizing rendered_html">
+<h3 id="zmienne-plas,-mass-i-pedi-maj&#261;-znacz&#261;c&#261;-r&#243;&#380;nice-wielko&#347;ci-wp&#322;ywu-na-wynik-w-tych-obserwacjach">zmienne plas, mass i pedi maj&#261; znacz&#261;c&#261; r&#243;&#380;nice wielko&#347;ci wp&#322;ywu na wynik w tych obserwacjach<a class="anchor-link" href="#zmienne-plas,-mass-i-pedi-maj&#261;-znacz&#261;c&#261;-r&#243;&#380;nice-wielko&#347;ci-wp&#322;ywu-na-wynik-w-tych-obserwacjach">&#182;</a></h3>
 </div>
 </div>
-
+</div>
+<div class="cell border-box-sizing text_cell rendered"><div class="prompt input_prompt">
+</div><div class="inner_cell">
+<div class="text_cell_render border-box-sizing rendered_html">
+<h2 id="Wp&#322;yw-zmiennej-na-predykcj&#281;-zale&#380;y-nie-tylko-od-jej-warto&#347;ci-ale-r&#243;wnie&#380;-od-warto&#347;ci-innych-zmiennych">Wp&#322;yw zmiennej na predykcj&#281; zale&#380;y nie tylko od jej warto&#347;ci ale r&#243;wnie&#380; od warto&#347;ci innych zmiennych<a class="anchor-link" href="#Wp&#322;yw-zmiennej-na-predykcj&#281;-zale&#380;y-nie-tylko-od-jej-warto&#347;ci-ale-r&#243;wnie&#380;-od-warto&#347;ci-innych-zmiennych">&#182;</a></h2>
+</div>
+</div>
 </div>
     </div>
   </div>
