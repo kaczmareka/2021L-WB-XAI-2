@@ -1,0 +1,117 @@
+---
+title: "PD3 Chylak Maciej"
+output:
+  html_document:
+    df_print: paged
+
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(dplyr)
+library(ggplot2)
+library(gridExtra)
+library(DALEX)
+library(DALEXtra)
+library(data.table)
+library(OpenML)
+library(ceterisParibus)
+
+set.seed(seed = 123)
+```
+
+##### Wczytanie zbioru danych
+
+```{r message=FALSE}
+df <- OpenML::getOMLDataSet(data.id = 42225)
+df <-  df$data
+
+```
+
+
+##### Dane:
+
+
+
+##### Przygotowanie naszego zbioru danych do dalszej analizy. Zamienienie kolumny cut na wartosci numeryczne, skala oceny ciecia
+
+```{r}
+df <- df[, c(1, 2, 3, 4, 5, 6, 8, 9, 10, 7)]
+
+df$cut <- ifelse(df$cut=="Fair", 0, ifelse(df$cut=="Good", 1, 
+                                           ifelse(df$cut=="Very Good", 2, 
+                                                  ifelse(df$cut=="Premium", 4, 5))))
+colnames(df) <- c(colnames(df[1:6]), "x_mes", "y_mes", "z_mes", "price")
+df
+```
+
+
+##### Podzielenie naszego zbioru danych na zbiór treninigowy i walidacyjny
+
+```{r essage=FALSE}
+dt <- sort(sample(nrow(df), nrow(df)*.7))
+Train <- df[dt, ]
+Valid <- df[-dt, ]
+```
+
+##### Stworzenie modelu na zbiorze treningowym
+
+```{r essage=FALSE}
+model <- ranger::ranger(price~., data=Train)
+model
+
+```
+
+##### Stworzenie explainera, który posluzy nam pozniej do wyjasnienia modelu 
+
+```{r essage=FALSE}
+explainer <- explain(model = model, 
+                     data = Train[, -10],
+                     y = Train$price)
+```
+
+```{r}
+model_type.dalex_explainer <- DALEXtra::model_type.dalex_explainer
+predict_model.dalex_explainer <- DALEXtra::predict_model.dalex_explainer
+```
+
+
+##### Obliczenie korelacji, a nastepnie zaprezentowanie ich na wykresie
+
+```{r}
+library(corrplot)
+
+res <- cor(df[, c(1, 2, 5, 6, 7, 8, 9)])
+round(res, 2)
+```
+
+##### Jak mozemy zauwazyc, szczegolnie zmienne wymiarow diamentu sa z soba silne skorelowane, moze to zaburzyc nieco nasze ostateczne wyniki, gdyz ten model dekompozycji jest szczegolnie wrazliwy na skorelowane zmienne.
+
+
+##### Wyjasnienie przy pomocy metody ceteris paribus
+
+##### Skupimy sie wokol zmiennej cut oznaczajacej jakos ciecia (1-najgorsze, 5-najlepsze), gdyz jest ona najmniej skorelowana z pozostalymi zmiennymi
+
+
+```{r}
+cp_1 <- ceteris_paribus(explainer, observation = Valid[50, -10], variables = "cut")
+plot(cp_1) + ggtitle("Ceteris paribus 1") 
+```
+
+Na pierwszym wykresie mozemy zauwazyc spodziewany wynik, wartosc diamentow rosnie wraz z jakoscia ciecia. Podobnego rozkladu powinnismy sie spodziewac takze przy pozostalych zmiennych
+
+
+
+```{r}
+cp_2 <- ceteris_paribus(explainer, observation = Valid[200, -10], variables = "cut")
+plot(cp_2) + ggtitle("Ceteris paribus 2")
+
+```
+
+```{r}
+Valid[200, ]
+```
+
+W tym przypadku mozemy zauwazyc dosyc nieoczywista zaleznosc. Wartosc diamentu osiaga swoje maksimum w przypadku gdy jego jakos wynosi 2, natomiast swoje minimum osiaga w punkcie, w ktorym jakos diamentu wynosi 4. Skad wynika taka zaleznosc? Ciezko dokladnie powiedziec, najprawdopodobniej jest ona spowodowana specyfika naszych danych lub z niedokladnosci naszej metody. Na pewno nie powinnismy sugerowac doborem cen w przypadku cech rownych pozostalym cecha naszej wybranej obserwacji, gdyz w dosc nieintuicyjny sposob oszacowalibysmy cene.
+
+Jednak chcialbym rowniez zaznaczyc, ze w wiekszosc przypadkow model zachowal sie w sposob przewidywalny, zanim znalazlem te obserwacje sprawdzilem okolo 20-30 innych i w kazdej z nich wykres wygladal podobnie jak wykres nr 1. 
