@@ -2,13 +2,14 @@
 title: "WB XAI-2 HW 1"
 author: "Agata Kaczmarek"
 date: "24 03 2021"
-output: pdf_document
+output: html_document
 ---
 
 ```{r setup, include=FALSE}
 #biblioteki
 library(DALEX)
 library(DALEXtra)
+library(ggplot2)
 #dane
 phones <- read.csv("phones.csv")
 ```
@@ -32,7 +33,7 @@ Dla naszych danych tworzę model, następnie dla wybranej obserwacji ze zbioru d
 
 ```{r}
 #tworzymy model
-model <- ranger::ranger(price~., data=phones2)
+model <- ranger::ranger(price~., data=phones2, seed=123)
 model
 #predykcja dla pierwszego 
 predict(model, phones2[1,])$predictions
@@ -43,65 +44,72 @@ phones[1,]$price
 Model przewiduje cenę danego urządzenia na podstawie dostępnych mu parametrów.
 
 ## Wyliczanie dekompozycji
-Dla wcześniej wybranej obserwacji przy pomocy Break Down zobaczmy dekompozycję - powie nam ona w jaki sposób "myślał" model wyliczając przewidywaną cenę. Czyli które wartości których własności uznał za pozytywnie wpływające na cenę (podwyższające ją) a które negatywnie (obniżające ją).
+Dla wcześniej wybranej obserwacji przy pomocy Break Down zobaczmy dekompozycję - powie nam ona w jaki sposób "myślał" model wyliczając przewidywaną cenę. Czyli które własności uznał za pozytywnie wpływające na cenę (podwyższające ją) a które negatywnie (obniżające ją).
 
-```{r}
+```{r, fig.width=15, fig.height=8}
 #explainer
 explainer <- explain(model = model,
                      data = phones2[,-11],
-                     y = phones2$price)
+                     y = phones2$price,
+                     colorize = FALSE)
 
 explainer$predict_function
 #Break Down
 phones2_bd_1<-predict_parts(explainer,
                             new_observation = phones[1,], type="break_down")
 plot(phones2_bd_1)
+
 ```
 
 *prediction* odnacza przewidywaną cenę dla telefonu o wyżej pokazanych właściwościach. 
-Jak widać największy pozytywny wpływ na cenę miały *name* (+362), *width_px*(+163) oraz *ram_gb* (+156). Czyli jak widać model założył, że ludzie są skłonni zapłacić więcej, gdy zobaczą jakąś szczególną nazwę, co może być dość prawdziwym założeniem, jako że ludzie mogą gdzieś usłyszeć, że np konkretnie taki, a nie inny model jest polecany. Co więcej zauważył, że znaczny wpływ na cenę może mieć szerokość ekranu, ale co ciekawe, w tym przypadku, nie wysokość. Przypuszczam, że w rzeczywistości szerokośći wysokość ekranu mogą być brane pod uwagę z podobnym priorytetem, podobnie jak przekątna ekranu, która dla modelu nie miała aż takiego wielkiego wpływu. Trzecią właściwością mającą największe znaczenie wg modelu była ilość pamięci RAM w GB, co też wydaje się być "rzeczywistym" założeniem.
+Jak widać największy pozytywny wpływ na cenę miały *name* (+383), *width_px*(+166) oraz *ram_gb* (+256). Ma to sens ponieważ wiemy, że często ludzie są skłonni zapłacić więcej za polecany im np przez znajomych telefon. Co więcej model uznał, że znaczny wpływ na cenę może mieć szerokość ekranu, ale co ciekawe, w tym przypadku, nie wysokość. W rzeczywistości szerokość i wysokość ekranu mogą być brane pod uwagę z podobnym priorytetem, podobnie jak przekątna ekranu, która dla modelu nie miała aż takiego wielkiego wpływu. Trzecią właściwością mającą największe znaczenie wg modelu była ilość pamięci RAM w GB, co też wydaje się być "rzeczywistym" założeniem.
 
 ## Najważniejsze zmienne
 Wybór dwóch obserwacji, które mają najważniejsze inne zmienne.
 
-```{r}
+```{r, fig.width=15, fig.height=8}
 phones2_bd_3<-predict_parts(explainer,
                             new_observation = phones[3,], type="break_down")
 plot(phones2_bd_3)
 
 ```
 
-Powyżej widać, że za najważniejsze zmienne w tym przypadku model uznał *flash_gb* (+1006), *ram_gb*(+772) oraz *diag* (+216). Również w tym przypadku wydają się to być sensowne założenia, aczkolwiek w moim odczuciu takie różnice we wpływie na cenę (dla *flash_gb* jest to prawie 5 razy więcej zł wpływu niż dla *diag*) mogą być kwestią dyskusyjną.
+Powyżej widać, że za najważniejsze zmienne w tym przypadku model uznał *flash_gb* (+959), *ram_gb*(+801) oraz *diag* (+234). Również w tym przypadku wydają się to być sensowne założenia, jako że przekątna ekranu oraz pamięć często są jednym z najbardziej znaczących kryteriów. Aczkolwiek w moim odczuciu aż takie różnice we wpływie na cenę (dla *flash_gb* jest to około 4 razy więcej zł wpływu niż dla *diag*) mogą być kwestią dyskusyjną w rzeczywistości.
 
-```{r}
+```{r, fig.width=15, fig.height=8}
 phones2_bd_8<-predict_parts(explainer,
                             new_observation = phones[8,], type="break_down")
 plot(phones2_bd_8)
 ```
 
-Tutaj natomiast za najważniejsze model uznał *name* (+362), *front_camera_mpix*(+135) oraz *width_px*(+186). Te zmienne, chociaż inne niż we wcześniejszym przykładzie, również wyglądają na sensowne założenia.
+Tutaj natomiast za najważniejsze model uznał *name* (+383), *front_camera_mpix*(+189) oraz *width_px*(+187). Te zmienne, chociaż inne niż we wcześniejszym przykładzie, również wyglądają na sensowne założenia.
 
 ## Obserwacje mające inne efekty dla tych samych zmiennych
 ### Obserwacja 31
-```{r}
+
+```{r, fig.width=16, fig.height=8}
 phones2_bd_31<-predict_parts(explainer,
                             new_observation = phones[31,], type="break_down")
 plot(phones2_bd_31)
 ```
+
 Powyżej obserwacja dla której model uznał wpływ *width_px* oraz *height_px* za negatywny (obniżył przewidywaną cenę).
-### Oberwacja 11
-```{r}
+
+### Obserwacja 11
+
+```{r, fig.width=15, fig.height=8}
 phones2_bd_11<-predict_parts(explainer,
                             new_observation = phones[11,], type="break_down")
 plot(phones2_bd_11)
 ```
+
 Zaś tutaj model uznał wpływ *width_px* oraz *height_px* za pozytywny (podwyższył przewidywaną cenę).
 
 Powyżej możemy zobaczyć, że wartości dla zmiennych *width_px* oraz *height_px* nie odbiegają od siebie w znaczny sposób. W obserwacji 31 szerokość ekranu to 720, a wysokość 1560, podczas gdy w obserwacji 11 te wartości odpowiednio to 828 oraz 1792. A jednak wpływ tych wartości na przewidywaną cenę ostateczną jest diametralnie inny. Co więcej, sama cena modelu bardzo różni się w obu przypadkach - dla obserwacji 31 jest to 443, natomiast 11 - 2859. 
 
-W tej sytuacji możemy powiedzieć, że rozważane tu dwie zmienne nie są jedynymi, które mają wpływ na końcowy wynik (cenę). Podczas tworzenia przewidywanych cen, model ma do dyspozycji 10 różnych zmiennych. A to znaczy, że w różnych przypadkach, różne wartości pozostałych 8 zmiennych będą miały znaczący wpływ na cenę końcową, a także na istotność wymienionych tu zmiennych.
+W tej sytuacji możemy powiedzieć, że rozważane tu dwie zmienne nie są jedynymi, które mają wpływ na końcowy wynik (cenę). Podczas tworzenia przewidywanych cen, model ma do dyspozycji 10 różnych zmiennych. A to znaczy, że wartości pozostałych 8 zmiennych będą również miały wpływ na cenę końcową, a także na istotność wymienionych tu zmiennych.
 
 ## Wnioski
 
-Model stworzony na potrzeby tego zadania przewidywał ceny telefonów na podstawie 10 różnych ich cech. Jak można zauważyć po przytoczonych tu przykładach, nie możemy powiedzieć, że zawsze któraś konkretna cecha będzie miała największy wpływ na cenę, a któraś najmniejszy. Wpływ poszczególnych zmiennych i wartości jest bardziej skomplikowany do znalezienia. O ile wnioski na podstawie wyjaśnień modelu w powyższych przykładach wydają się być "sensowne" i "rzeczywiste", o tyle założenie z góry że jedna konretna zmienna ma najwiekszy wpływ na cenę, w tym przypadku okazałoby się założeniem błędnym. 
+Model stworzony na potrzeby tego zadania przewidywał ceny telefonów na podstawie 10 różnych ich cech. Jak można zauważyć po przytoczonych tu przykładach, nie możemy powiedzieć, że zawsze któraś konkretna cecha będzie miała największy wpływ na cenę, a któraś najmniejszy. Wpływ poszczególnych zmiennych i wartości jest bardziej skomplikowany do znalezienia, dla różnych modeli (np. po zmienieniu wartości *seed* dla modelu) potrafi się on znacznie różnić. Oprócz tego, w naszych przykładach było widać, że dla poszczególnych predykcji różne cechy miały inny wpływ na końcową cenę. O ile wnioski na podstawie wyjaśnień naszego modelu w powyższych przykładach wydają się być "sensowne" i "rzeczywiste", o tyle założenie z góry że jedna konretna zmienna ma najwiekszy wpływ na cenę dla całego zbioru danych, okazuje się błędne. Żeby wyciągnąć globalne wnioski, potrzebowalibyśmy użyć innych narzędzi.
 

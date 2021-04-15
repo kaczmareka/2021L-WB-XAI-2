@@ -1,0 +1,111 @@
+---
+title: "LIME - Chylak Maciej "
+output: html_document
+---
+
+```{r setup, echo=FALSE, message=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+```
+
+```{r, message=FALSE}
+library(DALEX)
+library(DALEXtra)
+library(mlr)
+library(OpenML)
+library(knitr)
+```
+### Wczytanie danych, zmiana nazw kolumn
+
+```{r, message=FALSE}
+
+df <- OpenML::getOMLDataSet(data.id = 1464)
+df <-  df$data
+colnames(df) <- c("Recency", "Frequency", "Monetary", "Time", "Class")
+df$Class <- as.factor(df$Class)
+```
+```{r, warning=FALSE}
+head(df)
+```
+
+### Przygotowanie modelu do klasyfikacji
+
+You can also embed plots, for example:
+
+```{r, message=FALSE}
+task <- makeClassifTask(data = df, target = "Class")
+lrn <- makeLearner("classif.svm", predict.type = "prob")
+model <- train(lrn, task)
+```
+
+### Stworzenie explainera
+
+```{r message=FALSE}
+
+explainer <- explain(model = model, data = df[ , -5], y = as.numeric(df$Class))
+
+
+```
+
+
+```{r warning=FALSE, message=FALSE}
+library(lime)
+
+model_type.dalex_explainer <- DALEXtra::model_type.dalex_explainer
+predict_model.dalex_explainer <- DALEXtra::predict_model.dalex_explainer
+
+```
+
+W trakcie ponizszego wyjasniania przy pomocy metody Lime warto zaznaczyc, ze nasza ramka danych zawiera tylko 4 cechy, a co za tym idzie dosyc prosto bedzie znalezc lokalnego sasiada, dane nie powinny byc szczegolnie rozproszone.
+
+
+```{r}
+
+lime_1 <- predict_surrogate(explainer = explainer, 
+                                     new_observation = df[1, -5], 
+                                     n_features = 4, 
+                                     n_permutations = 1000,
+                                     type = "lime")
+plot(lime_1)
+```
+
+W przypadku pierwszego rekordy metoda LIME wskazala zdecydowanie negatywny wplyw zmiennych monetary oraz frequency na to, czy osoba odda krew. Co ciekawe, wplyw zmiennych monetary oraz frequency jest rozny, mimo tego, ze za kazdym razem osoby oddawaly tyle samo krwi, wiec wplyw teoretycznie powinien byc taki sam.
+
+
+```{r}
+
+bd_1 <- predict_parts(explainer, new_observation = df[1,])
+plot(bd_1)
+```
+
+W przypadku metody breakdown mozemy zauwazyc, ze zadna z cech nie miala dodatniego wplywu na dotowanie krwi. Interpretacja moze byc troche rozbiezna, patrzac na to, ze w przypadku metody LIME cecha Time miala delikatnie pozytywny wplyw.
+
+
+
+```{r}
+
+lime_300 <- predict_surrogate(explainer = explainer, 
+                                        new_observation = df[300, -5], 
+                                        n_features = 4, 
+                                        n_permutation4s = 1000,
+                                        type = "lime")
+plot(lime_300)
+```
+
+
+W przypadku drugiej obserwacji mozemy zauwazyc, ze w tym przypadku zarowno zmienna monetary jak i frequency odegrala istotna oraz pozytywna role, natomiast zmienna time wrecz przeciwnie. Jest to sytuacja odwrotna do tej, ktora widzielismy w obserwacji numer 1.
+
+
+```{r}
+
+bd_2 <- predict_parts(explainer, new_observation = df[300,])
+plot(bd_2)
+
+```
+
+W przypadku metody Break Down możemy zauwazyc, ze interpretacja w tym przypadku jest bardzo podobna. Warto zauważyc, ze w tym przypadku metoda breakdown slusznie wychwycila podobny wplyw cechy monetary oraz frequency, w przeciwienstwie do poprzedniego przykladu.
+
+Podsumowujac, jak mozemy zauwazyc obie metody czasami w dosyc roznym stopniu nadaja wagi poszczegolnym cecha. Np. w przypadku drugiej obserwacji zmienne Monetary oraz Frequency zdaja sie nie miec istotnego wplywu na ostateczna predykcje w przypadku metody break down, a w przypadku metody LIME stanowia najbardziej istotny pierwiastek. Moze to oczywiscie byc kwestia kolejnosci cech w przypadku metody breakdown.
+
+
+

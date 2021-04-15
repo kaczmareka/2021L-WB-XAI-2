@@ -1,0 +1,456 @@
+---
+title: "WB-XAI-2 - praca domowa 2"
+subtitle: "Mateusz Grzyb"
+output:
+  html_document:
+    df_print: paged
+---
+
+<br>
+
+![](https://static.turbosquid.com/Preview/2016/09/26__12_14_55/R0.pngE649D7B9-45F3-4207-B43D-8A06F77214CBLarge.jpg){width=25%}
+
+<br>
+
+## Wczytanie i wstępna obróbka danych
+
+```{r message=FALSE}
+library(OpenML)
+
+blood <- getOMLDataSet(data.id = 1464)
+blood <- blood$data
+
+head(blood)
+```
+
+<br>
+
+Podobnie jak ostatnio - modyfikujemy nazwy predyktorów oraz poziomy zmiennej celu.
+
+```{r}
+row.names(blood) <- NULL
+names(blood) <- c('Recency', 'Frequency', 'Monetary', 'Time', 'Donated')
+blood$Donated <- factor(ifelse(blood$Donated==2, 1, 0))
+
+head(blood)
+```
+
+<br>
+
+Ponadto, pozbędziemy się kolumny Monetary, ponieważ poprzednio pokazaliśmy, że ma ona taki sam rozkład jak zmienna Frequency (z dokładnością do skali.)
+
+```{r fig.height=3, fig.width=9}
+library(ggplot2)
+library(gridExtra)
+
+variables <- c('Frequency', 'Monetary')
+
+plots <- lapply(variables, function(variable){
+  ggplot(data=blood, aes_string(variable)) +
+    geom_bar(fill='skyblue') +
+    ylab('') +
+    theme_bw()
+})
+
+grid.arrange(grobs=plots, nrow=1)
+```
+
+```{r}
+blood <- blood[-3]
+
+head(blood)
+```
+
+<br>
+
+## Kłopotliwa korelacja zmiennych
+
+Podczas prezentacji EDA zbioru pokazaliśmy, że występuje znaczna korelacja zmiennych Frequency i Time.
+
+```{r fig.height=6, fig.width=6}
+library(ggcorrplot)
+
+corr <- round(cor(blood[-4], method='pearson'), 2)
+ggcorrplot(corr, lab=TRUE, title='Pearson coefficient',
+           ggtheme=ggplot2::theme_bw, colors = c('skyblue', 'white', 'indianred'))
+```
+
+```{r fig.height=6, fig.width=6}
+corr <- round(cor(blood[-4], method='spearman'), 2)
+ggcorrplot(corr, lab=TRUE, title='Spearman coefficient',
+           ggtheme=ggplot2::theme_bw, colors = c('skyblue', 'white', 'indianred'))
+```
+
+<br>
+
+Chcemy:
+
+* zmniejszyć występujące w danych korelacje,
+
+* zachować interpretowalność zmiennych,
+
+* nie utracić zupełnie informacji niesionej przez poszczególne zmienne.
+
+W tym celu testujemy następującą transformację:
+
+```{r}
+blood_m <- cbind(
+  blood[c('Recency', 'Frequency')],
+  Intensity=blood$Frequency/pmax(blood$Time-blood$Recency, 1),
+  blood['Donated'])
+
+head(blood_m)
+```
+
+```{r fig.height=3, fig.width=3}
+ggplot(data=blood_m, aes(y=Intensity)) +
+  geom_boxplot(fill='skyblue') +
+  xlim(c(-0.8, 0.8)) +
+  xlab('') +
+  ylab('') +
+  labs(title='Intensity') +
+  theme_bw() +
+  theme(
+    axis.title.x=element_blank(),
+    axis.text.x=element_blank(),
+    axis.ticks.x=element_blank()
+  )
+```
+
+Nowa zmienna Intensity to liczba donacji dokonanych przez daną osobę podzielona przez Time-Recency, czyli okno czasowe, w którym dana osoba oddawała krew.
+
+Można o niej myśleć jako o wpsółczynniku obecności liczonym dla danej osoby w czasie, kiedy była ona oddawaniem krwi zainteresowana.
+
+Nie jest to zatem współczynnik pozbawiony sensu.
+
+<br>
+
+```{r fig.height=6, fig.width=6}
+corr <- round(cor(blood_m[-4], method='pearson'), 2)
+ggcorrplot(corr, lab=TRUE, title='Pearson coefficient',
+           ggtheme=ggplot2::theme_bw, colors = c('skyblue', 'white', 'indianred'))
+```
+
+```{r fig.height=6, fig.width=6}
+corr <- round(cor(blood_m[-4], method='spearman'), 2)
+ggcorrplot(corr, lab=TRUE, title='Spearman coefficient',
+           ggtheme=ggplot2::theme_bw, colors = c('skyblue', 'white', 'indianred'))
+```
+
+Jak widać udało nam się zniwelować nieco korelacje.
+
+Pozostaje jeszcze jedno pytanie - jaki wpływ będzie miało to na model?
+
+<br>
+
+## Przygotowanie modelu
+
+Poniżej testujemy cztery modele:
+
+* na bazie zmiennych Recency, Frequency i Time (model 1),
+
+* na bazie zmiennych Recency i Time (model 2),
+
+* na bazie zmiennych Recency i Frequency (model 3),
+
+* na bazie zmiennych Recency, Frequency i Intensity (model 4).
+
+<br>
+
+### Model 1
+
+```{r message=FALSE}
+library(mlr)
+library(PRROC)
+
+classif_task1 <- makeClassifTask(id='blood1', data=blood, target='Donated')
+classif_lrn1 <- makeLearner('classif.ranger', predict.type='prob')
+
+model1 <- train(classif_lrn1, classif_task1)
+
+pred1 <- predict(model1, classif_task1)$data$prob.1
+
+fg1 <- pred1[blood$Donated==1]
+bg1 <- pred1[blood$Donated==0]
+
+roc1 <- roc.curve(scores.class0=fg1, scores.class1=bg1, curve=T)
+pr1 <- pr.curve(scores.class0=fg1, scores.class1=bg1, curve=T)
+```
+
+```{r}
+plot(roc1)
+```
+
+```{r}
+plot(pr1)
+```
+
+<br>
+
+### Model 2
+
+```{r}
+classif_task2 <- makeClassifTask(id='blood2', data=blood[-2], target='Donated')
+classif_lrn2 <- makeLearner('classif.ranger', predict.type='prob')
+
+model2 <- train(classif_lrn2, classif_task2)
+
+pred2 <- predict(model2, classif_task2)$data$prob.1
+
+fg2 <- pred2[blood$Donated==1]
+bg2 <- pred2[blood$Donated==0]
+
+roc2 <- roc.curve(scores.class0=fg2, scores.class1=bg2, curve=T)
+pr2 <- pr.curve(scores.class0=fg2, scores.class1=bg2, curve=T)
+```
+
+```{r}
+plot(roc2)
+```
+
+```{r}
+plot(pr2)
+```
+
+<br>
+
+### Model 3
+
+```{r}
+classif_task3 <- makeClassifTask(id='blood3', data=blood[-3], target='Donated')
+classif_lrn3 <- makeLearner('classif.ranger', predict.type='prob')
+
+model3 <- train(classif_lrn3, classif_task3)
+
+pred3 <- predict(model3, classif_task3)$data$prob.1
+
+fg3 <- pred3[blood$Donated==1]
+bg3 <- pred3[blood$Donated==0]
+
+roc3 <- roc.curve(scores.class0=fg3, scores.class1=bg3, curve=T)
+pr3 <- pr.curve(scores.class0=fg3, scores.class1=bg3, curve=T)
+```
+
+```{r}
+plot(roc3)
+```
+
+```{r}
+plot(pr3)
+```
+
+<br>
+
+### Model 4
+
+W tym modelu stosuję dodatkowo poprawkę wag, którą proponuje [ten artykuł](https://towardsdatascience.com/background-d5f101e00afc).
+
+Poprawka ta ma marginalnie pozytywny wpływ na jakość modelu i jej efekt nie zaciemnia wpływu doboru i transformacji zmiennych na wynik.
+
+```{r}
+corr <- round(cor(blood_m[-4], method='spearman'), 2)
+c2 <- apply(corr, 1, FUN=function(x) {sum(x^2)})
+c2 <- c2/sum(c2)
+
+classif_task4 <- makeClassifTask(id='blood4', data=blood_m, target='Donated')
+classif_lrn4 <- makeLearner('classif.ranger', predict.type='prob', split.select.weights=c2)
+
+model4 <- train(classif_lrn4, classif_task4)
+
+pred4 <- predict(model4, classif_task4)$data$prob.1
+
+fg4 <- pred4[blood$Donated==1]
+bg4 <- pred4[blood$Donated==0]
+
+roc4 <- roc.curve(scores.class0=fg4, scores.class1=bg4, curve=T)
+pr4 <- pr.curve(scores.class0=fg4, scores.class1=bg4, curve=T)
+```
+
+```{r}
+plot(roc4)
+```
+
+```{r}
+plot(pr4)
+```
+
+<br>
+
+### Podsumowanie
+
+Po pierwsze - od razu widać, że usuwanie jednej z silnie skorelowanych zmiennych ma negatywny wpływ na jakoś modelu (modele 2 i 3).
+
+Po drugie - model używający wprowadzonej zmiennej Intensity (model 4) jest marginalnie lepszy od modelu używającego oryginalnej zmiennej Time (model 1).
+
+Do dalszych działań wybieramy model 4.
+
+<br>
+
+## Właściwa część pracy domowej
+
+Stwórzmy najpierw instancję explainera.
+
+```{r message=FALSE}
+library(DALEX)
+library(DALEXtra)
+
+explainer <- explain(model=model4, data=blood_m, y=as.numeric(blood$Donated), label='mlr.ranger', colorize=FALSE)
+```
+
+<br>
+
+Poniżej znajdują się rozwiązania poszczególnych podpunktów pracy domowej.
+
+"Dla wybranej obserwacji ze zbioru danych wylicz predykcję modelu."
+
+```{r}
+obs <- blood_m[13, ]
+pred <- predict(model4, newdata=obs)
+pred$data
+```
+
+Model poprawnie przewidział odpowiedź dla obserwacji numer 13.
+
+<br>
+
+"Dla wybranej obserwacji z punktu 1., wylicz dekompozycję predykcji modelu używając LIME (pakiety w R: live, lime, localModel, iml, pakiety w Python: lime, dalex)."
+
+```{r message=FALSE}
+library(lime)
+
+model_type.dalex_explainer <- DALEXtra::model_type.dalex_explainer
+predict_model.dalex_explainer <- DALEXtra::predict_model.dalex_explainer
+
+lime_13 <- predict_surrogate(
+  explainer=explainer, 
+  new_observation=blood_m[13, ], 
+  n_features=3, 
+  n_permutations=1000,
+  type='lime')
+
+plot(lime_13)
+```
+
+Podobnie, jak tydzień temu wykazały metody Break Down i Shapley, to, że osoba skrywająca się za obserwacją numer 13 oddawała krew już 10 razy oraz ostatni raz zrobiła to 2 miesiące temu, wpływa korzystnie na prawdopodobnieństwo kolejnego oddania krwi.
+
+Ponadto, korzystny wpływ ma również dosyć wysoka wartość nowej zmiennej Intensity.
+
+<br>
+
+"Porównaj dekompozycję LIME dla różnych obserwacji w zbiorze. Jak stabilne są otrzymane wyjaśnienia?"
+
+Wybierzmy po trzy osoby z każdej grupy.
+
+```{r}
+blood_m[c(1, 2, 3), ]
+```
+
+```{r}
+lime_1 <- predict_surrogate(
+  explainer=explainer, 
+  new_observation=blood_m[1, ], 
+  n_features=3, 
+  n_permutations=1000,
+  type='lime')
+
+plot(lime_1)
+```
+
+```{r}
+lime_2 <- predict_surrogate(
+  explainer=explainer, 
+  new_observation=blood_m[2, ], 
+  n_features=3, 
+  n_permutations=1000,
+  type='lime')
+
+plot(lime_2)
+```
+```{r}
+lime_3 <- predict_surrogate(
+  explainer=explainer, 
+  new_observation=blood_m[3, ], 
+  n_features=3, 
+  n_permutations=1000,
+  type='lime')
+
+plot(lime_3)
+```
+
+```{r}
+blood_m[c(270, 271, 272), ]
+```
+
+```{r}
+lime_270 <- predict_surrogate(
+  explainer=explainer, 
+  new_observation=blood_m[270, ], 
+  n_features=3, 
+  n_permutations=1000,
+  type='lime')
+
+plot(lime_270)
+```
+
+```{r}
+lime_271 <- predict_surrogate(
+  explainer=explainer, 
+  new_observation=blood_m[271, ], 
+  n_features=3, 
+  n_permutations=1000,
+  type='lime')
+
+plot(lime_271)
+```
+
+```{r}
+lime_272 <- predict_surrogate(
+  explainer=explainer, 
+  new_observation=blood_m[272, ], 
+  n_features=3, 
+  n_permutations=1000,
+  type='lime')
+
+plot(lime_272)
+```
+
+W tym przypadku otrzymane wyjaśnienia wydają się dosyć stabilne.
+
+Pierwsze trzy obserwacje to wręcz modelowe przykłady - niskie Recency, wysokie Frequency i Intensity. Dla każdej z nich wyjaśnienie przypisuje pozytywny wpływ wszystkim cechom.
+
+Druga trójka to obserwacje opisujące osoby, które nie wróciły w marcu 2007 roku, ale posiadały pewne cechy pozytywne. I tak:
+
+* dla obserwacji 270 dosyć wysokie Intensity również otrzymało dodatni współczynnik, ale przeważył negatywny wpływ wysokiego Recency i niskiego Frequency,
+
+* dla obserwacji 271 dosyć wysokie Intensity i Frequency również otrzymało dodatnie współczynniki, ale przeważył negatywny wpływ wysokiego Recency,
+
+* dla obserwacji 272 stało się to samo co dla obserwacji 271, ale kolejność zmiennych na wykresie zmieniła się - prawdopodobnie dlatego, że Frequency wynosi tutaj 7, a nie 11.
+
+<br>
+
+"Dla wybranej obserwacji porównaj wyjaśnienie LIME wyjaśnieniem BreakDown lub SHAP."
+
+```{r}
+bd23 <- predict_parts(explainer, new_observation=blood_m[23, 1:3])
+
+plot(bd23)
+```
+
+```{r}
+sh23 <- predict_parts(explainer, new_observation=blood_m[23, 1:3], type='shap')
+
+plot(sh23)
+```
+
+```{r}
+lime_23 <- predict_surrogate(
+  explainer=explainer, 
+  new_observation=blood_m[23, ], 
+  n_features=3, 
+  n_permutations=1000,
+  type='lime')
+
+plot(lime_23)
+```
+
+Ciężko jest porównać skalę wpływów zmiennych obliczonych poszczególnymi metodami, ale wszystkie z metod są zgodne co do pozytywności/negatywności wartości zmiennych dla obserwacji numer 23 oraz prawie zgodne co do ich kolejności.
