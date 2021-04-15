@@ -1,0 +1,119 @@
+---
+title: "Praca Domowa 2"
+author: "Agata Makarewicz"
+date: "6 04 2021"
+output: 
+  html_document:
+  theme: united
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+library(DALEX)
+library(DALEXtra)
+library(ranger)
+library(knitr)
+library(lime)
+library(gridExtra)
+set.seed(1)
+```
+
+### Wstęp 
+
+Naszym zadaniem będzie analiza wyjaśniająca decyzję modelu uczenia maszynowego (w jaki sposób poszczególne zmienne na nią wpływają). Będą to wyjaśnienia lokalne, dla pojedynczych predykcji.
+
+Skorzystamy ze zbioru danych `phones` zawierającego informacje o cechach różnych telefonów dostępnych na rynku. Rozważamy problem regresji (chcemy przewidzieć zmienną `price`) przy wykorzystaniu lasu losowego zaimplementowany w pakiecie `ranger`. Analizy dokonamy na poniższych obserwacjach:
+
+```{r data}
+data <- read.csv('C:/Users/agama/Documents/2021L-WB-XAI-2/phones.csv')
+kable(data[c(1,10,50,70,100,334),], row.names = TRUE)
+```
+
+Zbiór posiada ok. 11% obserwacji z brakującymi wartościami w niektórych kolumnach, na potrzeby tego zadania (tworzenia modelu) rekordy te zostaną pominięte. Pominiemy również zmienną `name`, która jest w oczywisty sposób skorelowana ze zmienną `brand` oraz praktycznie unikalna dla każdej obserwacji (328/368 wartości unikalnych po usunięciu braków).
+
+```{r missing}
+# kable(sapply(data[,c('back_camera_mpix','front_camera_mpix')], function(x) sum(is.na(x))/(dim(data)[1])))
+data <- na.omit(data)
+```
+
+### Model & explainer
+
+```{r model, echo=TRUE, results=FALSE}
+model <- ranger(price~., data = data[,-1], num.trees = 50)
+explainer <- DALEX::explain(model = model, data = data[,-c(1,11)], y = data$price) 
+```
+
+### Wyliczenie predykcji dla wybranej obserwacji
+
+```{r predict, echo=TRUE}
+predict(model, data[1,])$predictions
+```
+
+### Dekompozycja predykcji
+
+#### LIME dla wybranej obserwacji
+
+```{r lime}
+model_type.dalex_explainer <- DALEXtra::model_type.dalex_explainer
+predict_model.dalex_explainer <- DALEXtra::predict_model.dalex_explainer
+
+lime_exp <- predict_surrogate(explainer = explainer, new_observation = data[1,-c(1,11)], n_features = 5, 
+                              n_permutations = 1000, type = "lime")
+
+plot(lime_exp)
+```
+
+```{r predict2, echo=TRUE}
+data[1,11]
+```
+
+Predykcja modelu liniowego przybliżającego w obserwacji 1 nasz model jest całkiem niezła patrząc na prawdziwą cenę rozważanego telefonu. W tym przypadku pozytywnie wpłynęły na nią pojemność pamięci flash (z przedziału (64,128)GB ) oraz przekątna powyżej 6.5 cali, co jest dość logiczne - takie parametry zazwyczaj faktycznie powodują wzrost ceny telefonu. Negatywny wpływ ma natomiast rozdzielczość aparatu, pojemność baterii oraz wysokość, co w przypadku dwóch pierwszych zmiennych jest dość dziwne, ponieważ te parametry są dosyć wysokie (dobre) i powinny raczej powodować wzrost ceny.
+
+$~$
+
+#### LIME dla kilku obserwacji
+
+```{r lime_multi, fig.width=15}
+lime_1 <- predict_surrogate(explainer = explainer, new_observation = data[10,-c(1,11)], n_features = 5, 
+                              n_permutations = 1000, type = "lime")
+lime_2 <- predict_surrogate(explainer = explainer, new_observation = data[50,-c(1,11)], n_features = 5, 
+                              n_permutations = 1000, type = "lime")
+lime_3 <- predict_surrogate(explainer = explainer, new_observation = data[100,-c(1,11)], n_features = 5, 
+                              n_permutations = 1000, type = "lime")
+lime_4 <- predict_surrogate(explainer = explainer, new_observation = data[300,-c(1,11)], n_features = 5, 
+                              n_permutations = 1000, type = "lime")
+
+plot1 <- plot(lime_1)
+plot2 <- plot(lime_2)
+plot3 <- plot(lime_3)
+plot4 <- plot(lime_4)
+
+grid.arrange(plot1, plot2, ncol=2)
+grid.arrange(plot3, plot4, ncol=2)
+```
+
+Porównując wyjaśnienia LIME dla wybranych 4 obserwacji możemy zaobserwować pewną stabilność: przekątna powyżej 6.5 cala, o ile występuje, ma dosyć spory pozytywny wpływ na cenę telefonu, podobnie pamięć RAM z zakresu 4-6 GB oraz pamięć flash z przedziału 64-128 GB. Są to bardzo dobre parametry więc nic dziwnego, że podwyższają one cenę telefonu - w rzeczywistości również ma to miejsce.
+
+Jeśli spojrzymy na negatywne wpływy to również możemy zaobserwować powtarzalność - pamięć flash poniżej 32 GB jak na obecne standardy nie jest zbyt duża, więc to normalne, że powoduje obniżenie ceny. Podobnie szerokość poniżej 720 px czy pamięć RAM poniżej 3 GB lub też rozdzielczość tylniego aparatu z przedziału 12-16 mpix.
+
+$~$
+
+#### Breakdown vs LIME dla wybranej obserwacji
+
+```{r compare, fig.width=15}
+bd <- predict_parts(explainer, new_observation = data[70,], type = "break_down")
+
+lime <- predict_surrogate(explainer = explainer, new_observation = data[70,-c(1,11)], n_features = 5, 
+                              n_permutations = 1000, type = "lime")
+
+plot1 <- plot(bd, title='Break Down profile - obserwacja 70')
+plot2 <- plot(lime)
+
+grid.arrange(plot1, plot2, ncol=2)
+```
+
+Porównując dekompozycję BreakDown oraz LIME możemy zauważyć w większości te same wpływy danych zmiennych (nie co do wartości wpływu ale w kontekście pozytywny/negatywny). Największy wpływ na plus ma pamięć RAM 8 GB, drugi w kolejności (w przypadku LIME ograniczonego do 5 zmiennych a trzeci w przypadku BreakDown) ma zmienna określająca pojemność pamięci flash. Oba te parametry są bardzo dobre więc nie dziwi podwyższenie przez nie ceny. Zmienne określające przekątną oraz rozdzielczość aparatu w obu dekompozycjach mają wpływ negatywny. Wyjątek tutaj stanowi zmienna brand, która w dekompozycji BreakDown ma wyraźny pozytywny wpływ na predykcję naszego modelu, a w przypadku modelu liniowego w dekompozycji LIME - negatywny (niezbyt duży). Takie porównanie dwóch dekompozycji zyskuje też na tym, że możemy zobaczyć w który "kraniec przedziału" określonego przez LIME wpada nasza faktyczna wartość - np w przypadku aparatu jest to górna granica, stąd zapewne znikomy negatywny wpływ.
+
+### Wnioski
+
+Przeprowadzone analizy dotyczyły pojedynczych predykcji, i mimo zaobserwowanej "stabilności" metody LIME, na ich podstawie ciężko jest wyciągać wnioski dotyczące ogólnego działania naszego modelu. Do zauważenia ogólnych tendencji/wpływów należałoby użyć innych narzędzi, umożliwiających globalne wyjaśnienia. Jednak fakt, że rozważaliśmy telefony różnych marek, z różnych półek cenowych, a poszczególne wartości danych zmiennych niezależnie od tych różnic dawały ten sam (pozytywny/negatywny) wpływ w przypadku losowych 3-4 obserwacji, może nam dawać pewną intuicję co do ich znaczenia w dalszych etapach analizy (zarówno lokalnej jak i globalnej).

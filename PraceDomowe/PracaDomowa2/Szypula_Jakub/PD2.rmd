@@ -1,0 +1,121 @@
+---
+title: "WB XAI-2 PD2"
+author: "Jakub Szypuła"
+date: "01/04/2021"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+library(DALEX)
+library(DALEXtra)
+library(mlr)
+
+gcd <- read.csv("dataset_31_credit-g.csv")
+model <- ranger::ranger(class~., data = gcd, classification = TRUE, probability = TRUE)
+explainer <- explain(model = model,
+                     data = gcd,
+                     y = gcd$class)
+```
+
+Słowem wstępu chciałbym zauważyc, że w poprzedniej pracy domowej wykorzystywałem inną wersję tego samego zbioru, która leżała u mnie na dysku z zeszłego roku. Teraz używam tej "oficjalnej" i zamiast klas 0/1 jest bad/good, co oczywiście niesie za sobą taki skutek, że klasy są zamienione miejscami przy predykcji (bo b jest przed g w alfabecie).
+
+## Przewidywanie obserwacji
+
+```{r obs}
+predict(model, gcd[1,])$predictions
+```
+
+```{r actualval}
+gcd[1,"class"]
+```
+
+Jak widać, model dobrze przewiduje klasę dla tej obserwacji.
+
+## Dekompozycja obserwacji
+
+
+```{r lime1, cache = TRUE}
+lime_gcd1_mlr <- predict_surrogate(explainer = explainer, 
+                                 new_observation = gcd[1, -21], 
+                                 n_features = 5, 
+                                 n_permutations = 1000,
+                                 type = "lime")
+
+
+plot(lime_gcd1_mlr)
+```
+
+Zauważamy tutaj, że bycie pod kreską znacznie obniża szanse na bycie dobrym kredytobiorcą, pokrywa się to z obserwacjami z poprzedniej PD1. Krótki kredyt, brak innych payment plans, brak znanych oszczędności i najbardziej wartościowa własność będąca nieruchomością wpływają pozytywnie na ocenę kredytobiorcy, znów, w zgodzie z tym co zostało ustalone na poprzedniej PD. Czyli ogólne wnioski jakie możemy wyciągnąć z grubsza się zgadzają.
+
+## Dekompozycja dla różnych obserwacji
+
+Obserwacja numer 201 (wartość poprawna: good, wartość przewidziana: good)
+
+```{r lime2, cache = TRUE}
+lime_gcd2_mlr <- predict_surrogate(explainer = explainer, 
+                                 new_observation = gcd[201, -21], 
+                                 n_features = 5, 
+                                 n_permutations = 1000,
+                                 type = "lime")
+
+
+plot(lime_gcd2_mlr)
+```
+
+
+Obserwacja numer 377 (wartość poprawna: good, wartość przewidziana: good)
+
+```{r lime3, cache = TRUE}
+lime_gcd3_mlr <- predict_surrogate(explainer = explainer, 
+                                 new_observation = gcd[377, -21], 
+                                 n_features = 5, 
+                                 n_permutations = 1000,
+                                 type = "lime")
+
+
+plot(lime_gcd3_mlr)
+```
+
+
+Obserwacja numer 608 (wartość poprawna: bad, wartość przewidziana: bad)
+
+```{r lime4, cache = TRUE}
+lime_gcd4_mlr <- predict_surrogate(explainer = explainer, 
+                                 new_observation = gcd[608, -21], 
+                                 n_features = 5, 
+                                 n_permutations = 1000,
+                                 type = "lime")
+
+
+plot(lime_gcd4_mlr)
+```
+
+Obserwacja numer 797 (wartość poprawna: bad, wartość przewidziana: bad)
+
+```{r lime5}
+lime_gcd5_mlr <- predict_surrogate(explainer = explainer, 
+                                 new_observation = gcd[797, -21], 
+                                 n_features = 5, 
+                                 n_permutations = 1000,
+                                 type = "lime")
+
+
+plot(lime_gcd5_mlr)
+```
+
+Dla różnych obserwacji zmieniają się najistotniejsze zmienne, nawet bardziej niż w wypadku PD1. Jednak poza tym dla tych samych wartości danych zmiennych wpływy mają ten sam znak, a nawet podobne wartości. Jeśli zwrócimy uwagę, to zauważymy też, że dla ujemnego `checking_status` wpływ jest mocno negatywny, dla między 0 a 200 jest lekko negatywny, a dla `no checking` jest znacząco pozytywny. Wygląda to jakby wzrost wpływu był zależny od wzrostu tej wartości (jeżeli potraktujemy `no checking` jako max). Podobne wartości możemy zauważyć przy wieku, `duration` i `credit_amount` (chociaż przy dwóch ostatnich to mniejsze wartości są lepsze).
+
+Więc w tym zbiorze, także na podstawie PD1 przy pytaniu "jaka zmienna jest najważniejsza" możemy powiedzieć "to zależy". Nie jest to koniecznie problem, np. w *papier-kamień-nożyce* nie ma zagrania, które zawsze wygrywa. Przy 20 zmiennych objaśniających jednak zbiór ten nie jest na poziomie tej prostej gry, a raczej na poziomie np. marki *Age of Empires™*
+
+## Porównanie z shap
+
+
+```{r shap}
+
+pp_ranger_shap_gcd_1 <- predict_parts(explainer, new_observation = gcd[797, -21], type = "shap", B = 10)
+plot(pp_ranger_shap_gcd_1)
+```
+
+Dla obu metod różne są najważniejsze zmienne, co ciekawe też zmienna `personal_status` dla obu metod ma różny wpływ (słaby pozytywny vs minimalnie negatywny). Można z tego wysnuć wniosek, że metody zgodne są co do tego czy "ważne" zmienne są pozytywne, czy negatywne, zaś przy mniej ważnych zaczynają się nie zgadzać co do skali wpływu szczegółów a nawet tego, czy te szczegóły dają wkład na plus, czy na minus.
+
+Filozoficznie można powiedzieć, że są w tym zachowaniu podobne do ludzi.
