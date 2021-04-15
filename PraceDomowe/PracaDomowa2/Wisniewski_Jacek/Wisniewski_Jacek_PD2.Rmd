@@ -1,0 +1,106 @@
+---
+title: "Praca Domowa 2"
+author: "Jacek Wiśniewski"
+date: "07/04/2021"
+output: html_document
+---
+
+
+### Wstęp
+
+W tej pracy stworzę model predykcyjny do przewidywania ceny telefonu, który następnie przeanalizuję korzystając z wykresów Lime. Skupię się również na analizie działania wykresów Lime.
+
+```{r setup, include=FALSE}
+set.seed(123)
+knitr::opts_chunk$set(echo = FALSE)
+library(mlr)
+library(DALEX)
+library(DALEXtra)
+library(gridExtra)
+```
+
+### Telefony którymi się będę zajmował
+
+```{r}
+data <- read.csv("./phones.csv")
+data <- na.omit(data)
+knitr::kable(data[c(1, 21, 43),], row.names = FALSE)
+```
+
+```{r, include=FALSE}
+task <- makeRegrTask(data = data[,-c(1, 2)], target = "price")
+learner <- makeLearner("regr.gbm")
+model <- train(learner, task)
+
+explainer <- explain(model = model,
+                     data = data[,-c(1, 2, 11)],
+                     y = data$price)
+```
+
+### Przewidywana cena pierwszego telefonu
+
+```{r}
+knitr::kable(predict(explainer, data[1, ]), align = 'l', col.names = '')
+```
+
+### Wykres Lime dla pierwszego telefonu
+
+```{r, fig.width=10}
+model_type.dalex_explainer <- DALEXtra::model_type.dalex_explainer
+predict_model.dalex_explainer <- DALEXtra::predict_model.dalex_explainer
+
+lime_1 <- predict_surrogate(explainer = explainer,
+                            new_observation = data[1, -c(1, 2, 11)],
+                            n_features = 5, 
+                            n_permutations = 1000, type = "lime")
+
+plot(lime_1)
+```
+
+Na pierwszym wykresie widzimy 5 zmiennych, które miały największy wpływ na predykcję ceny pierwszego telefonu. Zgodnie z intuicją zachowują się zmienne opisujące przekątną telefonu oraz rozdzielczość przedniej kamery, ponieważ duże wartości tych zmiennych pozytywnie wpływają na cenę.
+
+### Wykres Lime dla drugiego telefonu
+
+```{r, fig.width=10}
+lime_7 <- predict_surrogate(explainer = explainer,
+                            new_observation = data[21, -c(1, 2, 11)],
+                            n_features = 5, 
+                            n_permutations = 1000, type = "lime")
+
+plot(lime_7)
+```
+
+Z drugiego wykresu jesteśmy w stanie wyciągnąć podobne wnioski o wpływie diagonali na cenę telefonu, co z pierwszego wykresu. Zupełnie inaczej wygląda problem wpływu zmiennej front_camera_mpix. Na drugim wykresie ta zmienna ma negatywny wpływ na wynik, a na pierwszym pozytywny, mimo że warunek jest taki sam.
+
+### Wykres Lime dla trzeciego telefonu
+
+```{r, fig.width=10}
+lime_3 <- predict_surrogate(explainer = explainer,
+                            new_observation = data[43, -c(1, 2, 11)],
+                            n_features = 5, 
+                            n_permutations = 1000, type = "lime")
+
+plot(lime_3)
+```
+
+Porównując wpływ zmiennej back_camera_mpix na 3 przeanalizowanych obserwacjach, Obserwujemy dziwną zależność. Wykresy sugerują, że telefony z mniejszą rozdzielczością tylniej kamery mają niższą cenę, co jest nie zgodne z prawdą.
+
+### Porównanie Break Down oraz Lime dla pierwszego telefonu
+
+```{r, fig.width = 15}
+pred1 <- predict_parts(explainer, new_observation = data[1,])
+lime_1 <- predict_surrogate(explainer = explainer,
+                            new_observation = data[1, -c(1, 2, 11)],
+                            n_features = 8, 
+                            n_permutations = 1000, type = "lime")
+plot1 <- plot(pred1)
+plot2 <- plot(lime_1)
+
+grid.arrange(plot1, plot2, ncol = 2)
+```
+
+Większość zmiennych, które mają pozytywny wpływ na wykresie Break Down, ma również pozytywny wpływ na wykresie Lime. Wyjątkiem są zmienne diag oraz flash_gb.
+
+### Wnioski
+
+Otrzymane wyjaśnienia nie są stabilne. Zmienne o tych samych wartościach potrafią dawać przeciwne wpływy dla dwóch różnych oberwacji. Zmienna back_camera_mpix zachowuje się wbrew intuicji.

@@ -1,0 +1,164 @@
+---
+title: "Warsztaty badawcze - XAI - Praca domowa 2"
+author: "Paulina Jaszczuk"
+date: "7 04 2021"
+output: html_document
+---
+
+
+```{r setup, include=FALSE, warning=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(mlr)
+library(DALEX)
+library(DALEXtra)
+library(lime)
+```
+
+## Wczytanie danych
+
+```{r data}
+df <- read.csv("german_credit.csv")
+
+class_numerical <- model.matrix(~ 0 + class, df)
+df$class <- class_numerical[,"classgood"]
+```
+
+Dane zostały przekształcone analogicznie jak w pracy domowej 1. 
+
+## Przygotowanie modelu i explainera
+
+```{r model_explainer, results=FALSE}
+model <- ranger::ranger(class~., data = df, classification = TRUE, probability = TRUE)
+
+explainer <- DALEX::explain(model = model,
+                     data = df[,-21],
+                     y = df$class)
+```
+
+## Predykcja dla wybranej obserwacji
+
+#### Obserwacja 1
+
+Spójrzmy, do której klasy nasz model przyporządkował pierwszą obserwację. 
+
+```{r pred_first}
+predict(model, df[1,])$predictions
+```
+
+Pierwsza kolumna odpowiada prawdopodobieństwu klasy 1 czyli 'good', zaś druga prowdopodobieństwo klasy 0 czyli 'bad'.
+
+A teraz spójrzmy do jakiej klasy w rzeczywistości należy nasza pierwsza obserwacja:
+
+```{r actual_first}
+df[1, "class"]
+```
+
+## Dekompozycja predykcji z użyciem LIME
+
+Predykcja dotyczy klasy 'bad'.
+
+#### Obserwacja 1
+
+```{r lime_1, warning=FALSE}
+model_type.dalex_explainer <- DALEXtra::model_type.dalex_explainer
+predict_model.dalex_explainer <- DALEXtra::predict_model.dalex_explainer
+
+lime_exp1 <- DALEXtra::predict_surrogate(
+  explainer = explainer, 
+  new_observation = df[1,-21], 
+  n_features = 3, 
+  n_permutations = 1000,
+  type = "lime")
+
+plot(lime_exp1)
+```
+
+Jak widzimy predykcja klasy 'bad' wynosi około 0.10 - zgadza się to z faktyczną klasą obserwacji. Na predykcję pozytywny wpływ miała zmienna `checking_status`<0 - jest to logiczne, ujemny status raczej nie podnosi naszej wiarygodności kredytowej, zaś ujemny zmienna `duration`<=12 - stosunkowo krótki okres kredytu rzeczywiście może przyczynić się do tego, by zmiejszyć ryzyko kredytowe. Trzecia cecha o małym wpływie zmienia się wraz z kolejnymi wywołaniami. 
+
+## Porównanie decompozycji LIME dla kilku obserwacji
+
+#### Obserwacja 2
+
+```{r lime_2, warning=FALSE}
+lime_exp2 <- predict_surrogate(
+  explainer = explainer, 
+  new_observation = df[2,-21], 
+  n_features = 3, 
+  n_permutations = 1000,
+  type = "lime")
+
+plot(lime_exp2)
+```
+
+Predykcja klasy 'bad' wynosi około 0.75 - do tej klasy faktycznie należy obserwacja. Na predykcję pozytywny wpływ miały zmienne `credit_amount`>3972 - dość duży kredyt i `duration`>24 - długi okres kredytu zwiększają ryzyko kredytowe. Trzecia cecha o niższym wpływie jest zmienna.
+
+#### Obserwacja 3
+
+```{r lime_3, warning=FALSE}
+lime_exp3 <- predict_surrogate(
+  explainer = explainer, 
+  new_observation = df[3,-21], 
+  n_features = 3, 
+  n_permutations = 1000,
+  type = "lime")
+
+plot(lime_exp3)
+```
+
+Predykcja klasy 'bad' wynosi około 0.05, co prawidłowo klasyfikuje obserwację jako należącą do klasy 'good'. Negatywny wpływ miały zmienne `duration`<=12 oraz `checking_status` równy 'no checking'. O ile wpływ pierwszej zmiennej łatwo nam zinterpretować - krótki okres kredytu = większa pewność spłaty, o tyle trudno powiedziec czy brak informacji o statusie konta powinien wpływać na predykcję negatywnie czy pozytywnie.
+
+#### Obserwacja 4
+
+```{r lime_4, warning=FALSE}
+lime_exp4 <- predict_surrogate(
+  explainer = explainer, 
+  new_observation = df[4,-21], 
+  n_features = 3, 
+  n_permutations = 1000,
+  type = "lime")
+
+plot(lime_exp4)
+```
+
+Predykcja klasy 'bad' wynosi około 0.35, Nasz model nie był już tak jednoznaczny, jednakże zakwalifikował obserwację poprawnie. Co ciekawe, mimo takiej klasyfikacji, wszystkie rozważane zmienne wpływają na predykcję pozytywnie - `duration`>24, `credit_amount`>3972 oraz `checking_status`<0. To logiczne, że wszystkie te zmienne zwiększają ryzyko kredytowe - długi okres, wysoki kredyt i status mniejszy od zera. Jeżeli mimo to target został sklasyfikowany jako 'good', może to oznaczać, że inne zmienne miały bardzo silny ujemny wpływ na predykcję.
+
+#### Podsumowanie
+
+W większości analizy metody Lime były logiczne i powtarzalne co do tych samych cech - na przykład wpływ zmiennej `duration` w danych wartościach ma taki sam wpływ na predykcję (pozytywny lub negatywny). Jednak wraz z kolejnymi wywołaniami metody zmienne o niższym wpływie często się zmieniały wraz ze charakterem swojej działalności (zmniejszanie, zwiększanie predykcji).
+
+## Porównanie Break Down, Shap i LIME
+
+#### Obserwacja 1
+
+#### Break Down
+
+```{r break_down_1}
+decomp <- predict_parts(explainer, new_observation = df[1,])
+plot(decomp)
+```
+
+### Shap
+
+```{r shap_1}
+decomp_shap <- predict_parts(explainer, new_observation = df[1,], type = "shap", B = 10)
+plot(decomp_shap)
+```
+
+#### Obserwacja 2
+
+```{r lime_1no2, warning=FALSE}
+lime_exp1no1 <- predict_surrogate(
+  explainer = explainer, 
+  new_observation = df[1,-21], 
+  n_features = 5, 
+  n_permutations = 1000,
+  type = "lime")
+
+plot(lime_exp1no1)
+```
+
+Metody zgadzają się co do wpływu dwóch najważniejszych dla Lime cech - `checking_status` i `duration`. Pozostałe zmieniają się i często mają odwrotny wpływ na predykcję. Co więcej - sama predykcja ma inną wartość dla Lime i Break Down, a różnica jest zauważalna.
+
+## Podsumowanie
+
+Lime służy do analiz lokalnych - trudno na podstawie działania tej motedy wysnuwać wnioski na temat działania całego modelu. Jednakże wyjaśnienia metody były logiczne i  trafne, zwłaszcza dla zmiennych o dużym wpływie na predykcję (dawały ten sam, powtarzalny wynik dla kilku losowych obserwacji).

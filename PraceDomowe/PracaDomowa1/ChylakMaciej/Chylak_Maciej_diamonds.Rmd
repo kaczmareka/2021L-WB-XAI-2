@@ -1,0 +1,114 @@
+---
+title: "Untitled"
+output:
+  html_document:
+    df_print: paged
+
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(dplyr)
+library(ggplot2)
+library(data.table)
+library(gridExtra)
+library(DALEX)
+library(DALEXtra)
+```
+
+##### Wczytanie zbioru danych
+
+```{r }
+df <- OpenML::getOMLDataSet(data.id = 42225)
+df <-  df$data
+df
+```
+
+
+##### Dane:
+
+
+
+##### Przygotowanie naszego zbioru danych do dalszej analizy. Zamienienie kolumny cut na wartosci numeryczne, skala oceny ciecia
+
+```{r}
+
+df <- df[, c(1, 2, 3, 4, 5, 6, 8, 9, 10, 7)]
+df$cut <- ifelse(df$cut=="Fair", 0, ifelse(df$cut=="Good", 1, 
+                                          ifelse(df$cut=="Very Good", 2, 
+                                                 ifelse(df$cut=="Premium", 4, 5))))
+colnames(df) <- c(colnames(df[1:6]), "x_mes", "y_mes", "z_mes", "price")
+df
+```
+
+
+##### Podzielenie naszego zbioru danych na zbiór treninigowy i walidacyjny
+
+```{r}
+dt <- sort(sample(nrow(df), nrow(df)*.7))
+Train <- df[dt, ]
+Valid <- df[-dt, ]
+```
+
+##### Stworzenie modelu na zbiorze treningowym
+
+```{r}
+model <- ranger::ranger(price~., data=Train)
+model
+
+```
+
+##### Stworzenie explainera, który posluzy nam pozniej do wyjasnienia modelu 
+
+```{r}
+explainer <- explain(model = model, 
+                     data = Train[, -10],
+                     y = Train$price)
+```
+
+
+
+##### Wyjasnienie przy pomocy metody break down i shap dwoch dowolnych wierszy
+
+```{r}
+df_bd_0 <- predict_parts(explainer, new_observation = Valid[1, ], type="break_down")
+plot(df_bd_0)
+```
+
+```{r}
+df_shap_0 <- predict_parts(explainer, new_observation = Valid[2,], type = "shap", B = 10)
+plot(df_shap_0)
+```
+
+
+
+
+##### Dwie obserwacje ze zbioru danych, które maja inne najważniejsze zmienne:
+
+```{r}
+df_bd_1 <- predict_parts(explainer, new_observation = Valid[2000, ], type="break_down")
+plot(df_bd_1)
+```
+
+```{r}
+df_bd_2 <- predict_parts(explainer, new_observation = Valid[30, ], type="break_down")
+plot(df_bd_2)
+```
+
+W przypadku pierwszej obserwacji do najwazniejszych zmiennych naleza carat oraz color, natomiast w przypadku drugiej obserwacji jest to carat oraz y_mes. Przegladajac wieksza liczbe obserwacji mozemy zauwazyc, ze te trzy zmienne w glownej mierze definiuja ostateczna cene diamentu. Reszta parametrow z reguly ma duzo mniejsze znaczenie.
+
+
+
+##### Dwie obserwacje które dla tych samych zmiennych maja inne efekty (carat)
+
+```{r}
+df_bd_3 <- predict_parts(explainer, new_observation = Valid[1, ], type="break_down")
+plot(df_bd_3)
+```
+
+```{r}
+df_bd_4 <- predict_parts(explainer, new_observation = Valid[2000, ], type="break_down")
+plot(df_bd_4)
+```
+
+Oczywiscie rezultat jest taki, poniewaz w przypadku pierwszej obserwacji cena diamentu byla duzo mniejsza niz srednia, natomiast w przypadku drugim duzo wieksza

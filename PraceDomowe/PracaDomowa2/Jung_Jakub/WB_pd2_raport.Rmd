@@ -1,0 +1,145 @@
+---
+title: "WB XAI-2 PD2"
+author: "Jakub Jung"
+date: "28.03.2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE)
+```
+
+```{r, include=FALSE}
+library(DALEX)
+library(DALEXtra)
+library(mlr3)
+
+diabetes <- read.csv("diabetes.csv")
+head(diabetes)
+diabetes$class[diabetes$class == "tested_positive"] <- 0
+diabetes$class[diabetes$class == "tested_negative"] <- 1
+diabetes$class <- as.numeric(diabetes$class)
+
+
+model <- ranger::ranger(class~., data = diabetes, classification = TRUE, probability = TRUE)
+
+
+explainer <- explain(model = model,
+                     data = diabetes[,-9],
+                     y = diabetes$class)
+```
+
+## 1. Predykcja dla wybranej obserwacji
+
+Przez 0 oznaczamy pozytywny wynik testu na cukrzycę, a przez 1 negatywny.
+
+```{r}
+
+predict(model, diabetes[9,])$predictions
+diabetes[9,9]
+
+```
+
+
+## 2. Dekompozycja predykcji przy użyciu LIME
+
+Dla 3 najważniejszych zmiennych:
+
+```{r, message=FALSE}
+library(lime)
+
+model_type.dalex_explainer <- DALEXtra::model_type.dalex_explainer
+predict_model.dalex_explainer <- DALEXtra::predict_model.dalex_explainer
+
+pp_lime_9 <- predict_surrogate(
+  explainer=explainer, 
+  new_observation=diabetes[9,-9], 
+  n_features=3, 
+  n_permutations=1000,
+  type='lime')
+
+plot(pp_lime_9)
+```
+
+Dla wszystkich zmiennych:
+
+```{r, message=FALSE}
+pp_lime_9 <- predict_surrogate(
+  explainer=explainer, 
+  new_observation=diabetes[9,-9], 
+  n_features=8, 
+  n_permutations=1000,
+  type='lime')
+
+plot(pp_lime_9)
+```
+
+
+## 3. Porównanie dekompozycji LIME dla różnych obserwacji
+
+```{r}
+pp_lime_9 <- predict_surrogate(
+  explainer=explainer, 
+  new_observation=diabetes[9,-9], 
+  n_features=3, 
+  n_permutations=1000,
+  type='lime')
+
+plot(pp_lime_9)
+```
+
+```{r}
+pp_lime_26 <- predict_surrogate(
+  explainer=explainer, 
+  new_observation=diabetes[26,-9], 
+  n_features=3, 
+  n_permutations=1000,
+  type='lime')
+
+plot(pp_lime_26)
+```
+
+```{r}
+pp_lime_24 <- predict_surrogate(
+  explainer=explainer, 
+  new_observation=diabetes[24,-9], 
+  n_features=3, 
+  n_permutations=1000,
+  type='lime')
+
+plot(pp_lime_24)
+```
+
+Najważniejsze zmienne dla różnych obserwacji mogą się znacznie różnić - jest to zrozumiałe, jako że to tylko wyjaśnienia lokalne.
+
+## 4. Porównanie z wyjaśnieniami BreakDown i SHAP
+
+Dla przypomnienia - LIME:
+
+```{r}
+pp_lime_9 <- predict_surrogate(
+  explainer=explainer, 
+  new_observation=diabetes[9,-9], 
+  n_features=3, 
+  n_permutations=1000,
+  type='lime')
+
+plot(pp_lime_9)
+```
+
+
+BreakDown:
+
+```{r}
+pp_bd_9 <- predict_parts(explainer, new_observation = diabetes[9,], type = "break_down")
+plot(pp_bd_9)
+```
+
+SHAP:
+
+```{r}
+pp_shap_9 <- predict_parts(explainer, new_observation = diabetes[9,], type = "shap", B = 10)
+plot(pp_shap_9)
+```
+
+Najważniejsze zmienne w różnych wyjaśnieniach pokrywają się, różniąc się co najwyżej kolejnością i wagą.

@@ -1,0 +1,144 @@
+---
+title: "PD2"
+author: "Klaudia Gruszkowska"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Model
+
+### Wczytanie przygotowanych danych i podział na zbiór testowy i treningowy
+```{r,message=FALSE}
+library('randomForest')
+
+cleaned_housing <- read.csv("cleaned_housing.csv")
+head(cleaned_housing)
+
+set.seed(1738)
+
+sample = sample.int(n = nrow(cleaned_housing), size = floor(.8*nrow(cleaned_housing)), replace = F)
+train = cleaned_housing[sample, ] 
+test  = cleaned_housing[-sample, ] 
+
+train_y = train[,'median_house_value']
+train_x = train[, names(train) !='median_house_value']
+```
+
+### Model lasu losowego
+```{r,message=FALSE}
+
+rf_model = randomForest(train_x, y = train_y , ntree = 500, importance = TRUE)
+
+```
+
+## Predykcja modelu
+
+Wybieram obserwację pierwszą i sprawdzę jaką predykcję wylicza zaproponowany model lasu losowego:
+
+```{r}
+y_pred = predict(rf_model, newdata = cleaned_housing[1,])
+y_pred
+```
+
+Rzeczywista wartość dla tej obserwacji:
+
+```{r}
+cleaned_housing[1,'median_house_value']
+```
+
+## Dekompozycja predykcji modelu 
+
+Teraz sprawdzę co według LIME miało wpływ na taki wynik predykcji: 
+
+```{r,message=FALSE}
+library(DALEX)
+library(DALEXtra)
+
+
+explainer <- DALEX::explain(model = rf_model,
+                     data = cleaned_housing[, -14],
+                     y = cleaned_housing[, 14], colorize=FALSE)
+```
+
+```{r,message=FALSE,warning=FALSE}
+library("lime")
+model_type.dalex_explainer <- DALEXtra::model_type.dalex_explainer
+predict_model.dalex_explainer <- DALEXtra::predict_model.dalex_explainer
+
+lime_explain <- predict_surrogate(explainer = explainer, 
+                                 new_observation = cleaned_housing[1,  names(cleaned_housing) !='median_house_value'], 
+                                 n_features = 3, 
+                                 n_permutations = 1000,
+                                 type = "lime")
+(as.data.frame(lime_explain))
+```
+
+W ramce danych pokazuję dokładne dane dekompozycji. Dodatkowo przedstawię je na wykresie:
+
+```{r, message=FALSE,warning=FALSE}
+plot(lime_explain)
+```
+
+LIME wskazało zmienną median_income(medianę dochodów)>0.459 jako tą mającą największy wpływ na predykcję. Pozytywny wpływ tej zmiennej jest zrozumiały ponieważ może wskazywać na bogatą dzielnicę. Kolejne wskazane zmienne to latitude(szerokość geograficzna)>0.973, która ma negatywny wpływ na predykcję oraz mean_room(średnia liczba pokoi)>0.2520, która ma wpływ pozytywny. Jednak te dwie ostatnie mają znacząco mniejszy wpływ. Średnia liczba pokoi>0.2520 może oznaczać skalę wielkości domu, czyli jej pozytywny wpływ też wydaje się być uzasadniony.
+
+## Porównanie dekompozycji LIME
+
+Następnie wybieram 5 i 2000 obserwację.
+
+```{r, message=FALSE,warning=FALSE}
+lime_explain_2 <- predict_surrogate(explainer = explainer, 
+                                 new_observation = cleaned_housing[5,  names(cleaned_housing) !='median_house_value'], 
+                                 n_features = 3, 
+                                 n_permutations = 1000,
+                                 type = "lime")
+
+plot(lime_explain_2)
+```
+
+W tym przypadku najważniejsza cecha z poprzedniej obserwacji(mean_income) nie znalazła się tutaj w wybranych trzech. Jednak zmienna mean_rooms, która tak jak poprzednio ma wartość większą od 0.2520 ma bardzo podobny dodatni wpływ na predykcję. 
+
+```{r, message=FALSE,warning=FALSE}
+
+lime_explain_3 <- predict_surrogate(explainer = explainer, 
+                                 new_observation = cleaned_housing[2000,  names(cleaned_housing) !='median_house_value'], 
+                                 n_features = 3, 
+                                 n_permutations = 1000,
+                                 type = "lime")
+
+plot(lime_explain_3)
+```
+
+W tym przypadku wyróżnione zmienne powtarzają się z poprzednich obserwacji. Median_income <=-0.688 ma bardzo duży negatywny wpływ na predykcję. Co tak samo jak przy pierwszej obserwacji jest zrozumiałe.Longitude(długość geograficzna) i mean_bedrooms mają dla tej obserwacji pozytywny wpływ ale znacząco mniejszy od wpływu mean_income.
+
+
+## Porównanie wyjaśnień LIME, Break Down i SHAP
+```{r, message=FALSE,warning=FALSE}
+library(ggplot2)
+library(gridExtra)
+
+lime_explain_4 <- predict_surrogate(explainer = explainer, 
+                                 new_observation = cleaned_housing[2,  names(cleaned_housing) !='median_house_value'], 
+                                 n_features = 3, 
+                                 n_permutations = 1000,
+                                 type = "lime")
+plot_lime<-plot(lime_explain_4)
+
+
+pp_ranger_bd <- predict_parts(explainer, new_observation = cleaned_housing[2,])
+plot_bd<-plot(pp_ranger_bd)+ylim(200000,550000)
+
+pp_ranger_shap <- predict_parts(explainer, new_observation = cleaned_housing[2,], type = "shap", B = 10)
+plot_shap<-plot(pp_ranger_shap)
+
+plot_lime
+plot_bd
+plot_shap
+```
+
+Przeglądając wyniki można zauważyć, że Break Down i SHAP wskazują tą samą kolejność pierwszych trzech zmiennych, a metoda LIME zgadza się z nimi tylko co do pierwszej czyli median_income, dodatkowo wielkości wpływu też są różne. Wszystkie metody są za to zgodne co do rodzaju wpływu danych zmiennych (pozytywny i negatywny).
+
+## Wnioski
+Dla pokazanych powyżej danych metoda LIME jest stabilna. Dla tych samych wartości zmiennych ma podobne wpływy. 
