@@ -182,14 +182,21 @@ cat(paste0(round(sum(b)/length(b), 2)*100, '% out of ', length(b), ' people with
 
 Powyżej znajduje się próba potwierdzenia mojej teorii. Rzeczywiście coś może być na rzeczy.
 
+<br>
+
 Najlepiej jednak będzie użyć testu statystycznego.
 
 ```{r}
 # https://en.wikipedia.org/wiki/Fisher%27s_exact_test
-fisher.test(rbind(c(sum(a), length(a) - sum(a)), c(sum(b), length(b) - sum(b))), alternative='greater')
+fisher.test(rbind(c(sum(a), length(a) - sum(a)), c(sum(b), length(b) - sum(b))), alternative = 'greater')
+```
+p-value na poziomie 0.05265 sugeruje, że może to nie być tylko przypadek.
+
+```{r}
+prop.test(c(sum(a), sum(b)), c(length(a), length(b)), alternative = 'greater')
 ```
 
-p-value na poziomie 0.05265 sugeruje, że może to nie być tylko przypadek.
+Inny test, ale podobny wynik.
 
 <br>
 
