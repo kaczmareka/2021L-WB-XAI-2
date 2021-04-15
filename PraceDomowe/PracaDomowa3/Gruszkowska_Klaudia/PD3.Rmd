@@ -1,0 +1,129 @@
+---
+title: "Praca Domowa 3"
+author: "Klaudia Gruszkowska"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Model
+
+### Wczytanie przygotowanych danych i podział na zbiór testowy i treningowy
+```{r,message=FALSE}
+library('randomForest')
+
+cleaned_housing <- read.csv("cleaned_housing.csv")
+head(cleaned_housing)
+cleaned_housing$NEAR.BAY = as.factor(cleaned_housing$NEAR.BAY)
+cleaned_housing$X.1H.OCEAN = as.factor(cleaned_housing$X.1H.OCEAN)
+cleaned_housing$INLAND = as.factor(cleaned_housing$INLAND)
+cleaned_housing$ISLAND = as.factor(cleaned_housing$ISLAND)
+cleaned_housing$NEAR.OCEAN = as.factor(cleaned_housing$NEAR.OCEAN)
+
+set.seed(1738)
+
+sample = sample.int(n = nrow(cleaned_housing), size = floor(.8*nrow(cleaned_housing)), replace = F)
+train = cleaned_housing[sample, ] 
+test  = cleaned_housing[-sample, ] 
+
+train_y = train[,'median_house_value']
+train_x = train[, names(train) !='median_house_value']
+```
+
+### Model lasu losowego
+```{r,message=FALSE}
+
+rf_model = randomForest(train_x, y = train_y , ntree = 500, importance = TRUE)
+
+```
+
+## Predykcja modelu
+
+Wybieram obserwację pierwszą i sprawdzę jaką predykcję wylicza zaproponowany model lasu losowego:
+
+```{r}
+y_pred = predict(rf_model, newdata = cleaned_housing[1,])
+y_pred
+```
+
+Rzeczywista wartość dla tej obserwacji:
+
+```{r}
+cleaned_housing[1,'median_house_value']
+```
+
+## Dekompozycja predykcji modelu Ceteris Paribus
+
+Do dekompozycji predykcji modelu użyję profili Ceteris Paribus:
+
+```{r,message=FALSE}
+library(DALEX)
+library(DALEXtra)
+
+
+explainer <- DALEX::explain(model = rf_model,
+                     data = cleaned_housing[, -14],
+                     y = cleaned_housing[, 14], 
+                     colorize=FALSE,
+                     label = "Random Forest")
+```
+
+```{r}
+
+cp_california_rf <- predict_profile(explainer = explainer, 
+                           new_observation = cleaned_housing[1,])
+```
+
+```{r,message=FALSE}
+library("ggplot2")
+plot(cp_california_rf) +
+  ggtitle("Ceteris-paribus profile", "")
+```
+
+Najbardziej zróżnicowany wykres otrzymujemy dla zmiennej median_income czyli mediany wynagrodzenia na gospodarstwo domowe, co pokrywa się z EDA, wcześniejszymi analizami (Break Down, SHAP, lime), które wskazywały tą zmienną jako tą z największym wpływem na predykcję oraz wydaje się to logiczne ze względu na to, że może wskazywać na "bogatą" lub "biedną" dzielnicę. Przy reszcie zmiennych widzimy tylko niewielkie różnice w wartościach predykcji dla zmien tych zmiennych.Co może wydawać się dziwne ale przy wzroście mean_bedrooms i mean_rooms  nie widać wzrostu predykcji. A taki wzrost byłby zgodny z logiką, że im większa liczba pokoi tym większy dom a im większa średnia ilość pokoi w dzielnicy tym 
+ta dzielnica jest bogatsza (większe domy np wille). Jednak takie zachowanie może być związane obcięciem naszej zmiennej celu (z EDA wiemy, że median_house_value została obcięta do wartości 500001). Dodatkowo innym wytłumaczeniem może być to, że nasza zmienna mean_bedrooms jest mocno skorelowana z mean_rooms co prowadzi do dziwnych i nierealnych sytuacji gdy przy dość niskiej wartości mean_bedrooms sprawdzamy wysokie mean_rooms.
+
+```{r}
+
+cp_california_bedrooms <- predict_profile(explainer = explainer, 
+                           new_observation = cleaned_housing[1,], variables = "mean_rooms")
+
+plot(cp_california_bedrooms,variables = "mean_rooms") +
+  ggtitle("Ceteris-paribus profile", "")
+
+```
+
+```{r}
+plot(cp_california_rf, variable_type = "categorical", categorical_type = "bars") +
+  ggtitle("Ceteris-paribus profile", "")
+```
+
+Dla tych powyższych zmiennych, które oznaczają odległość od oceanu zmiany tych zmiennych oznaczają coś co nie jest w stanie zaistnieć w rzeczywistości, dla zmiennej NEAR.BAY = 1 oznaczającej bycie blisko zatoki rozważanie np wartości INLAND = 1 jest nielogiczne. Nie może być dom położony nad zatoką i równocześnie w głębi lądu.
+
+```{r}
+
+cp_california_2 <- predict_profile(explainer = explainer, 
+                           new_observation = cleaned_housing[2000,])
+
+plot(cp_california_2) +
+  ggtitle("Ceteris-paribus profile", "")
+
+```
+
+```{r}
+
+cp_california_2 <- predict_profile(explainer = explainer, 
+                           new_observation = cleaned_housing[2000,], variables = "mean_rooms")
+
+plot(cp_california_2,variables = "mean_rooms") +
+  ggtitle("Ceteris-paribus profile", "")
+
+```
+
+Porównując obserwację pierwszą z obserwacją przedstawioną powyżej możemy zauważyć, że kilka wykresów zmiennych wygląda inaczej np langitude lub longitude. Przyjżyjmy się jednak zmiennej mean_rooms . W tym przypadku widać, że przy lekkim zmniejszeniu tej zmniejszej otrzymamy większe wartości predykcji. Przy obserwacji pierwszej nie ma takiej anomalii. Wykres zmiennej mean_bedrooms też ma taki wzrost. W tym wypadku może to mieć również związek z np. sytuacją gdy wartości zmiennej określającej ilość pokoi byłaby mniejsza od wartości ilości sypialni. Jest to niezbyt realna sytuacja, może to prowadzi do błędu predykcji.  
+
+## Wnioski
+
+Niestety w tym przypadku profile Ceteris Paribus nie sprawdzają się dobrze ponieważ mamy do czynienia ze zmiennymi zależnymi (wiemy to z EDA), a w takim przypadku dochodzimy do dziwnych, nierealnych sytuacji gdy np. dany dom położony jest i blisko  oceanu i w głębi lądu albo ma niską średnią liczbę pokoi a wysoką średnią liczbę sypialni. Przez to nie wszystkie anomalie jesteśmy w stanie wytłumaczyć na podstawie danych.

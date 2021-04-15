@@ -1,0 +1,61 @@
+---
+title: "WB XAI-2 PD3"
+author: "Jakub Szypuła"
+date: "14/04/2021"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+library(DALEX)
+library(DALEXtra)
+library(mlr)
+
+gcd <- read.csv("dataset_31_credit-g.csv")
+model <- ranger::ranger(class~., data = gcd, classification = TRUE, probability = TRUE)
+explainer <- explain(model = model,
+                     data = gcd[,-21],
+                     y = gcd$class)
+```
+
+
+## Przewidywanie obserwacji
+
+```{r obs}
+predict(model, gcd[1,])$predictions
+```
+
+```{r actualval}
+gcd[1,"class"]
+```
+
+Jak widać obserwacja jest przewidziana poprawnie.
+
+## Dekompozycja predykcji
+
+```{r dekompozycja1, cache = TRUE,  fig.height=3}
+
+cp_1 <- predict_profile(explainer,gcd[1,-21])
+plot(cp_1)
+```
+
+Tak samo jak w poprzednich PD widać, że im dłuższy kredyt i wyższa wysokość kredytu, tym gorzej dla oceny, a im większ wiek (do ok. 50 roku życia) i czas pobytu tym lepiej. Interesującym jest fakt, że num_dependents, installment_commitment, residence_since i existing_credits mają bardzo znikomy wpływ. Być może oznacza to, że cechy te mogą być wypadkową pozostałych cech. Np. osoba stara, która jest wykwalifikowanym pracownikiem raczej się nie przeprowadza, więc czas pobytu może być cechą wspólną dla tej populacji, przez co przy założeniu, że pozostałe cechy się nie zmieniają, zmiana tej cechy nie wpłynie znacząco na predykcję. Działoby się tak ponieważ predykcja byłaby oparta na zmiennych których wypadkową jest ta cecha.
+
+## Różne profile CP
+
+```{r dekompozycjaA, cache = TRUE,  fig.height=3}
+
+cp_A <- predict_profile(explainer,gcd[532,-21])
+plot(cp_A)
+```
+
+```{r dekompozycjaB, cache = TRUE,  fig.height=3}
+
+cp_B <- predict_profile(explainer,gcd[231,-21])
+plot(cp_B)
+```
+
+Jak można zauważyc, dalej duration i credit amount dalej ze wzrostem powodują spadek prawdopodobieństwa bycia "dobrym" kredytobiorcą. To co jednak jest interesujące, to zmiana w przypadku wieku i existing_credits. W pierwszym przypadku przy wzroście wieku zdolność kredytowa rośnie, około 35. roku życia stabilizuje się i potem powoli spada. W drugim przypadku zaraz przed 30tką jest lekka górka, która później się stabilizuje. W drguim wypadku existing_credits nie ma dużego wpływu, w pierwszym przypadku zwiększenie z jedynki na dwójkę powodouje duże spadek, a zdolność kredytowa dalej maleje wraz z liczbą kredytów.
+
+Kwestia wieku wynika być może z tego, że pierwsza osoba bierze krótszy i niższy kredyt oraz ma więcej istniejących kredytów, więc gdyby była starsza (i pewnie bardziej ustabilizowana) prawdopodobieństwo spłacenia przez nią kredytu byłoby większe. Druga osoba mieszka w obecnym miejscu zamieszkania od dwóch lat, więc oznacza to, że jest niedługo po przeprowadzce.
+
+Kwestia istnienia innych kredytów może być spowodowana tym, że pierwsza osoba bierze krótszy kredyt i na mniejszą kwotę, więc może być bardziej skupiona na spłaceniu pozostałych, większych kredytów. Druga zaś będzie miała raczej za priorytet spłatę kredytu w tym banku.
