@@ -1,0 +1,85 @@
+---
+title: "Praca Domowa 3"
+author: "Agata Makarewicz"
+date: "15 04 2021"
+output: 
+  html_document:
+  theme: united
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+library(DALEX)
+library(DALEXtra)
+library(ranger)
+library(knitr)
+library(lime)
+library(gridExtra)
+set.seed(1)
+```
+
+### Wstęp 
+
+Naszym zadaniem będzie analiza wyjaśniająca decyzję modelu uczenia maszynowego (w jaki sposób poszczególne zmienne na nią wpływają). Będą to wyjaśnienia lokalne, dla pojedynczych predykcji.
+
+Skorzystamy ze zbioru danych `phones` zawierającego informacje o cechach różnych telefonów dostępnych na rynku. Rozważamy problem regresji (chcemy przewidzieć zmienną `price`) przy wykorzystaniu lasu losowego zaimplementowany w pakiecie `ranger`. Analizy dokonamy na poniższych obserwacjach:
+
+```{r data}
+data <- read.csv('C:/Users/agama/Documents/2021L-WB-XAI-2/phones.csv')
+kable(data[c(1,59,63),], row.names = TRUE)
+```
+
+Zbiór posiada ok. 11% obserwacji z brakującymi wartościami w niektórych kolumnach, na potrzeby tego zadania (tworzenia modelu) rekordy te zostaną pominięte. Pominiemy również zmienną `name`, która jest w oczywisty sposób skorelowana ze zmienną `brand` oraz praktycznie unikalna dla każdej obserwacji (328/368 wartości unikalnych po usunięciu braków).
+
+```{r missing}
+# kable(sapply(data[,c('back_camera_mpix','front_camera_mpix')], function(x) sum(is.na(x))/(dim(data)[1])))
+data <- na.omit(data)
+```
+
+### Model & explainer
+
+```{r model, echo=TRUE, results=FALSE}
+model <- ranger(price~., data = data[,-1], num.trees = 50)
+explainer <- DALEX::explain(model = model, data = data[,-c(1,11)], y = data$price) 
+```
+
+### Wyliczenie predykcji dla wybranej obserwacji
+
+```{r predict, echo=TRUE}
+predict(model, data[1,])$predictions
+```
+
+### Dekompozycja predykcji
+
+#### Ceteris Paribus dla wybranej obserwacji
+
+```{r ,fig.height=10, fig.width=12}
+model_type.dalex_explainer <- DALEXtra::model_type.dalex_explainer
+predict_model.dalex_explainer <- DALEXtra::predict_model.dalex_explainer
+
+cp1 <- predict_profile(explainer,data[1,-11])
+plot(cp1)
+
+```
+
+Na powyższym profilu możemy zaobserwować jak zmienia się nasza predykcja dla wybranej (pierwszej) obserwacji przy zwiększaniu wartości poszczególnych zmiennych. W przypadku zmiennych dotyczących pamięci - `flash_gb` oraz `ram_gb` - obserwujemy wzrost predykcji aż do pewnych wartości (odpowiednio 200 oraz 7.5 GB), powyżej których stabilizuje się. Może być to spowodowane tym, że mamy nieliczne telefony o większej pamięci na rynku (outliery wykryte w czasie EDA) i zwyczajnie nie ma zapotrzebowania na aż tak duże pojemności. Dość niestandardową obserwacją jest to, że obserwujemy "delikatnie" negatywny wpływ zmiennych `front_camera_mpix`, `back_camera_mpix` oraz `battry_mAh`, w przypadku których wzrost wartości powoduje wahania/lekki spadek predykcji. Być może jest to specyficzna sytuacja, akurat dla tej obserwacji - dziwne, żeby lepszy aparat czy bateria powodowały spadek ceny telefonu. Jeśli chodzi o wymiary telefonu - wszystkie 3 zmienne mają pozytywny wpływ na cenę telefonu, poza drobnym spadkiem w okolicy wymiarów 1000x2000, co jest dość niespodziwane. Dla przekątnej  wyraźny pozytywny wpływ obserwujemy dopiero gdy jej wartość przekracza 6. Jest to zgodne z wcześniejszymy analizami, oraz ogólną sytuacją na rynku - ekrany takiej wielkości zwykle powodują spory przeskok cenowy (w stosunku do np. 5.5), ciekawe jest jednak to że wzrost predykcji przy wzroście szerokości ekranu jest znacznie większy, niż dla innych zmiennych opisujących rozmiar. Może to być związane z wysoką korelacją pomiędzy nimi, zaobserwowaną podczas EDA.
+
+#### Dwie obserwacje o różnych profilach CP
+
+```{r, fig.height=10, fig.width=12}
+cp2 <- predict_profile(explainer, 
+                            new_observation = data[c(59,63),], 
+                            variables = c("back_camera_mpix","battery_mAh","diag","flash_gb","front_camera_mpix","height_px","ram_gb","width_px"), 
+                            grid_points = 201)
+
+plot(cp2, variables = c("back_camera_mpix","battery_mAh","diag","flash_gb","front_camera_mpix","height_px","ram_gb","width_px"), color = "_ids_")
+```
+
+Dla dekompozycji powyższych obserwacji (59 oraz 63) możemy zauważyć spore różnice we wpływach poszczególnych zmiennych - skupimy się na tych najbardziej widocznych. Zacznijmy od baterii - dla obserwacji 63 wpływ jej pojemności jest pozytywny, w pewnym momencie stabilizuje sie - jest to dość wytłumaczalne zachowanie. Natomiast dla drugiego telefonu cena (wartość predykcji) znacząco spada przy przekroczeniu ok. 2500 mAh i stabilizuje się na poziomie o ok. 250 niższym w stosunku do pierwszej obserwacji. Ten spadek jest bardzo dziwny, bo zwykle cena przy lepszej baterii wzrasta, to raz, a dwa - ten spadek jest bardzo duży, bo aż o 1000; ciężko wytłumaczyć takie zachowanie modelu. Dziwne zachowanie obserwujemy dla tej samej obserwacji, również dla zmiennej `front_camera_mpix` - cena spada przy lepszym aparacie, natomiast dla drugiej obserwacji, poza delikatnum wzrostem/spadkiem w okolicach 10 mpix, wartości predykcji pozostaje stała.
+Ciekawe różnice można zauważyć (znów) dla zmiennych opisujących wymiary telefonu - o ile dla szerokości wpływ jest w zasadzie taki sam, raczej pozytywny (co jest naturalne), z większym "zasięgiem" wartości predykcji dla jednej z obserwacji, o tyle dla pozostałych dwóch jest on dość zróżnicowany. W przypadku wysokości dla jednej z obserwacji ponownie (tak jak dla 1 telefonu) widzimy spadek w okolicy 2500, a potem wzrost; dla drugiej wartość wzrasta w okolicy 1800, spada około 2000 i stabilizuje, znacznie niżej niz dla pierwszej obserwacji. Co ciekawe, obie "startują" i trzymają się dość długo na tym samym poziomie (tj. wartości predykcji dla obu obserwacji dla tych samych wartości `height_px` są bardzo zbliżone aż do ok. 1800). Jeśli chodzi o diagonalę -  dla jednej obserwacji obserwujemy stały wzrost ceny telefonu od około 5.5, natomiast dla drugiej znów dziwny spadek a potem nagły wzrost. Te dziwne zachowanie ciężko wytłumaczyć - dla wszystkich tych zmiennych logiczny byłby wzrost ceny telefonu wraz ze wzrostem ich wartości. Możliwe, że ponownie problemem jest tutaj wysoka korelacja rozważanych zmiennych.
+
+### Wnioski
+
+Przeprowadzone analizy dotyczyły pojedynczych predykcji i na ich podstawie ciężko jest wyciągać wnioski dotyczące ogólnego działania naszego modelu. Do zauważenia ogólnych tendencji/wpływów należałoby użyć innych narzędzi, umożliwiających globalne wyjaśnienia. Jednak na podstawie tych oraz wcześniejszych analiz (Breakdown, LIME oraz EDA) możemy zauważyć pewne prawidłowiści jeśli chodzi o wpływ pewnych zmiennych na wartości predykcji (np. jej wzrost dla diagonali większej od 6 oraz właściwie stale pozytywny wpływ zmiennej `ram_gb`).
+
+$~$
