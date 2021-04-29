@@ -50,6 +50,7 @@ dim(diabetes_train_skip)
 dim(diabetes_test_skip)
 
 ```
+
 ## Zbiór danych
 
 Zbiór danych Diabetes zawiera informacje o osobach chorych na cukrzycę.
@@ -90,6 +91,7 @@ model_ranger <- train(learner_ranger, task_ranger)
 explainer_ranger<- DALEX::explain(model = model_ranger,
                          data = diabetes_train_skip,
                          y = as.numeric(diabetes_train_skip$class=='1'),
+                         label="ranger",
                     colorize = FALSE)
 pred_ranger <- predict(model_ranger, newdata = diabetes_test_skip)$data
 AUC_ranger <- measureAUC(probabilities = pred_ranger$prob.1,
@@ -110,7 +112,9 @@ AUC_ranger
 FNR_ranger
 BAC_ranger
 ```
+
 ## Model Ada
+
 
 ```{r explainer ada}
 task_ada <- makeClassifTask(data = diabetes_train_skip, target = "class")
@@ -120,6 +124,7 @@ model_ada <- train(learner_ada, task_ada)
 explainer_ada<- DALEX::explain(model = model_ada,
                          data = diabetes_train_skip,
                          y = as.numeric(diabetes_train_skip$class=='1'),
+                         label="ada",
                     colorize = FALSE)
 
 pred_ada <- predict(model_ada, newdata = diabetes_test_skip)$data
@@ -150,21 +155,15 @@ fi_2 <- model_parts(explainer_ada, B = 10, N=1000)
 ```
 
 
-Niestety wyświetlanie
-
-## Feature Importance Ranger
+## Feature Importance 
 
 ```{r}
-plot(fi_1)
+plot(fi_1, fi_2)
 ```
 
-Zdecydowanie najważniejszą zmienną w modelu ranger jest zmienna `plas` (importance 0.175), a pozostałe zmienne mają bardzo podobne wyniki ok. 0.1.
+Według modelu ranger zdecydowanie najważniejszą zmienną w modelu ranger jest zmienna `plas` (importance 0.175), co oznacza, że po przelosowaniu jej wartości AUC modelu zmalało aż o 0.825. Pozostałe zmienne mają wskaźnik importance na poziomie ok. 0.1, wszystkie bardzo podobny.
 
-## Feature Importance Ada
-```{r}
-plot(fi_2)
-```
-Ponownie najważniejszą zmienną w modelu ranger jest zmienna `plas` (importance 0.22), na drugim miejscu mamy `mass` (0.17). Najmniej istotną zmienną okazuje się ilość razy, które pacjentka była w ciąży.
+W modelu Ada ponownie najważniejszą zmienną jest zmienna `plas` (importance 0.22), na drugim miejscu mamy `mass` (0.17). Najmniej istotną zmienną okazuje się ilość razy, które pacjentka była w ciąży.
 
 ## Porównanie
 
