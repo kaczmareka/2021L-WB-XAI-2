@@ -1,0 +1,181 @@
+---
+title: "Praca domowa 1"
+author: "Martyna Majchrzak"
+date: "25 03 2021"
+output: 
+  html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, cache=TRUE)
+library(OpenML)
+library(mlr)
+library(DALEX)
+library(knitr)
+set.seed(1)
+diabetes <- getOMLDataSet(data.id = 37L)
+diabetes <- diabetes$data
+```
+
+## Zbiór danych
+
+Zbiór danych Diabetes zawiera informacje o osobach chorych na cukrzycę:
+
+1. preg - ile razy dana osoba była w ciąży
+2. plas - stężenie glukozy w osoczu po 2h ustnego testu na tolerancję glukozy
+3. pres - ciśnienie rozkurczowe (mm Hg)
+4. skin - grubość skóry mierzona na tricepsie (mm)
+5. insu - 2-Hour serum insulin (mu U/ml)
+6. mass - index masy ciała BMI (waga w kg/(wzrost w m)^2)
+7. pedi - obciążenie genetyczne (Diabetes pedigree function)
+8. age - wiek (lata)
+9. class - zmienna celu o wartościach tested_negative oraz tested_positive
+
+```{r import, echo=FALSE}
+kable(head(diabetes))
+```
+
+### Rozkłady zmiennych
+
+```{r zmienne, fig.height=6, fig.width=9}
+library(ggplot2)
+library(gridExtra)
+variables <- names(diabetes)
+
+plots <- lapply(variables, function(variable){
+  ggplot(data=diabetes, aes_string(variable)) +
+    geom_bar(fill='darkred') +
+    ylab('')
+})
+
+grid.arrange(grobs=plots, ncol=3)
+```
+Należy zauważyć, że w zmiennych plas, pres, skin i insu (oraz mass, ale jest ich na tyle mało, że nie widać ich na wykresie) występują obserwacje o wartości 0, których byćmoże nie powinno tam być - mogą być to ukryte braki danych. Jest ich jednak na tyle dużo, że powinięcie ich w analizie znacznie zubożyło by zbiór, zatem na potrzeby tej pracy zostaną pozostawione bez zmian.
+
+Zmienna celu class ma nierównoliczne klasy - obserwacji tested_negative jest ok. 2 razy więcej niż tested_positive.
+
+## Tworzenie modelu i explainera
+
+W rozwiązaniu zostanie użyty model Random Forest. Według danych OpenML  ( https://www.openml.org/t/37 ) osiąga on średnio największą wartość miary accuracy.
+
+```{r explainer}
+model_ranger <- ranger::ranger(class~., data = diabetes, classification = TRUE, probability = TRUE)
+
+explainer<- explain(model = model_ranger,
+                         data = diabetes[,-9],
+                         y = as.numeric(diabetes$class=='tested_positive'),
+                    colorize = FALSE)
+
+```
+
+
+## Praca domowa
+
+### Predykcja dla obserwacji 13
+
+```{r pred13}
+prediction13<-predict(model_ranger, diabetes[13,])
+prediction13$predictions
+```
+
+Ta osoba z prawdopodobieństwem ok. 0.75 została przypisana do klasy tested_negative (czyli 0.25 do tested_positive)
+
+### Break Down oraz SHAP dla obserwacji 13
+
+#### Break Down
+
+```{r bd13}
+pp_ranger_bd_13 <- predict_parts(explainer, new_observation = diabetes[13,], type = "break_down")
+plot(pp_ranger_bd_13)
+```
+
+#### SHAP
+
+```{r shap13}
+pp_ranger_shap_13 <- predict_parts(explainer, new_observation = diabetes[13,], type = "shap", B = 10)
+plot(pp_ranger_shap_13)
+
+```
+
+Prawdopodobieństwo przypisania do klasy tested_positive obniżały u tej osoby zmienne mass (bmi 27.1, nadwaga). Podwyższały za to zmienne preg (w ciąży 10 razy) oraz plas i pedi.
+
+### Obserwacje o różnych najważniejszych zmiennych
+
+Przyjrzymy się obserwacjom, które mają najmniejszą i największą wartość zmiennej age (czyli najmłodszej i najstarszej).
+
+#### Obserwacja age max
+
+```{r age_max}
+obs_old<-diabetes[which.max(diabetes$age),]
+pp_ranger_shap_old <- predict_parts(explainer, new_observation =obs_old, type = "shap", B = 10)
+plot(pp_ranger_shap_old)
+```
+
+Predykcja dla tej obserwacji.
+```{r age_max_pred}
+prediction_old<-predict(model_ranger, obs_old)
+prediction_old$predictions
+```
+
+#### Obserwacja age min
+
+```{r age_min}
+obs_young<-diabetes[which.min(diabetes$age),]
+pp_ranger_shap_young <- predict_parts(explainer, new_observation =obs_young, type = "shap", B = 10)
+plot(pp_ranger_shap_young)
+```
+
+Predykcja dla tej obserwacji.
+
+```{r age_min_pred}
+prediction_young<-predict(model_ranger, obs_young)
+prediction_young$predictions
+```
+
+#### Wnioski
+
+W pierwszym przypadku najważniejszymi zmiennymi wyjaśniającymi są mass i plas, a w drugim plas (wynik) testu i age. W obu przypadkach z bardzo dużą pewnością możemy stwierdzić, że danej osobie wyjdzie negatywny wynik testu.
+
+
+### Obserwacje, które mają dla tych samych zmiennych inne efekty
+
+Przyjrzymy się obserwacjom z najmniejszą i największą wartością zmiennej pedi czyli Diabetes pedigree function, która opisuje wartość obciążenia genetycznego, które posiada dana osoba, i jest wyliczana na podstawie historii choroby w jej rodzinie.
+
+#### Obserwacja pedi max
+
+```{r pedi_max}
+obs_pedi_max<-diabetes[which.max(diabetes$pedi),]
+pp_ranger_shap_pedi_max <- predict_parts(explainer, new_observation =obs_pedi_max, type = "shap", B = 10)
+plot(pp_ranger_shap_pedi_max)
+```
+
+Predykcja dla tej obserwacji.
+```{r pedi_max_pred}
+prediction_pedi_max<-predict(model_ranger, obs_pedi_max)
+prediction_pedi_max$predictions
+```
+
+#### Obserwacja pedi min
+
+```{r pedi_min}
+obs_pedi_min<-diabetes[which.min(diabetes$pedi),]
+pp_ranger_shap_pedi_min <- predict_parts(explainer, new_observation =obs_pedi_min, type = "shap", B = 10)
+plot(pp_ranger_shap_pedi_min)
+```
+
+Predykcja dla tej obserwacji.
+
+```{r pedi_min_pred, cache=TRUE}
+prediction_pedi_min<-predict(model_ranger, obs_pedi_min)
+prediction_pedi_min$predictions
+```
+
+
+W obu przypadkach najważniejszymi zmiennymi wyjaśniającymi są mass i plas, ale w pierwszym przypadku przyczyniają się one do zwiększenia prawdopodobieństwa pozytywnego testu, a w drugim wprost przeciwnie. Ma to sens, że osoba z mniejszym obciążeniem raczej nie będzie chora. Ciekawe jest jednak to, że (pozornie) wartość zmiennej pedi nie ma dla tych obserwacji dużego wpływu na wynik predykcji.
+
+
+### Wnioski końcowe
+
+Praktycznie we wszystkich rozpatrywanych przypadkach najważniejszą zmienną wpływającą na predykcję jest mass lub plas. Zatem ryzyko zachorowania na cukrzycę zależy przede wszystkim od masy ciała, można je też wykryć odpowiednim testem badając stężenie glukozy we krwi. Istotnymi czynnikami które należałoby też wziąć pod uwagę jest wiek pacjenta oraz ew. jego obciążenie genetyczne.
+
+

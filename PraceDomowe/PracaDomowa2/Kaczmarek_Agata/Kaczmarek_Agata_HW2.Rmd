@@ -1,0 +1,149 @@
+---
+title: "Kaczmarek_Agata_HW2"
+author: "Agata Kaczmarek"
+date: "7 04 2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+#biblioteki
+library(DALEX)
+library(DALEXtra)
+library(ggplot2)
+library(lime)
+set.seed(123)
+#dane
+phones <- read.csv("phones.csv")
+```
+
+### Wstęp
+W tej pracy skupię się na przygotowaniu dekompozycji predykcji modelu używając narzędzie LIME, a następnie porównam te wyjaśnienia dla różnych obserwacji. Zbiór danych wykorzystany w tym zadaniu dotyczy telefonów i ich różnych cech. Obserwacje posiadające braki w danych zostaną usunięte.
+
+```{r}
+which(is.na(phones))
+
+#usuwamy braki
+phones2<- phones[complete.cases(phones),]  
+```
+
+### Model
+
+Poniżej stworzę przykładowy model dla mojego zbioru danych, a także wyliczę jego predykcję dla pięćdziesiątej czwartej obserwacji:
+
+```{r}
+model <- ranger::ranger(price~., data=phones2[,-1], seed=123, num.trees = 50)
+
+model
+#predykcja dla pierwszego 
+predict(model, phones2[54,])$predictions
+#dane podane
+phones2[54,]$price
+```
+
+Różnica jest widoczna między wartością podaną, a wartością wyliczoną przez model, jednak te wartości są dość do siebie zbliżone - wartość podana przez model stanowi około 102.5% wartości podanej.
+
+### Dekompozycja z użyciem LIME
+Poniżej wyliczona zostanie dekompozycja predycji modelu dla obserwacji wybranej wyżej:
+
+
+
+```{r}
+model_type.dalex_explainer <- DALEXtra::model_type.dalex_explainer
+predict_model.dalex_explainer <- DALEXtra::predict_model.dalex_explainer
+#explainer
+explainer <- DALEX::explain(model = model,
+                     data = phones2[,-11],
+                     y = phones2$price,
+                     colorize = FALSE)
+
+lime_phones54 <- predict_surrogate(explainer = explainer, 
+                                  new_observation = phones2[54,-11], 
+                                 n_features = 7, 
+                                 n_permutations = 1000,
+                                 type = "lime")
+plot(lime_phones54)
+
+explainer2<-lime(phones2[,-11], model)
+explanation<-explain(phones2[54,-11], explainer2, n_labels=1, n_features=3)
+
+```
+
+Jak widać przy tej obserwacji za trzy najważniejsze zmienne LIME uznał *ram_gb* (wartość większa niż 6), *width_px* (wartość większa niż 1080) oraz *height_px* (wartość większa niż 2400). Wydają to się być dość sensowne założenia, w szczególności to dotyczące pamięci. Różnica między wpływem wartości szerokości oraz wysokości jest zastanawiąjąca, ponieważ są to dwie zmienne, które z przeprowadzonego wcześniej EDA okazały się mocno od siebie zależne, również miały wiele wspólnego z przekątną ekranu, która tutaj nie jest nawet w siedmiu najważniejszych zmiennych.
+
+### Porównanie LIME dla różnych obserwacji
+Różne obserwacje w zbiorze do porównania dekompozycji: pierwsza, czternasta, pięćdziesiąta czwarta oraz trzysta sześćdziesiąta druga.
+
+Pierwsza:
+
+```{r}
+lime_phones1 <- predict_surrogate(explainer = explainer, 
+                                  new_observation = phones2[1,-11], 
+                                 n_features = 5, 
+                                 n_permutations = 1000,
+                                 type = "lime")
+plot(lime_phones1)
+```
+
+Czternasta:
+```{r}
+lime_phones14 <- predict_surrogate(explainer = explainer, 
+                                  new_observation = phones2[14,-11], 
+                                 n_features = 5, 
+                                 n_permutations = 1000,
+                                 type = "lime")
+plot(lime_phones14)
+```
+
+Pięćdziesiąta czwarta:
+
+```{r}
+plot(lime_phones54)
+```
+
+Trzysta sześćdziesiąta druga:
+
+```{r}
+lime_phones362 <- predict_surrogate(explainer = explainer, 
+                                  new_observation = phones2[325,-11], 
+                                 n_features = 5, 
+                                 n_permutations = 1000,
+                                 type = "lime")
+plot(lime_phones362)
+```
+
+
+
+#### Porównanie stabilności otrzymanych wyjaśnień:
+
+Porównując stabilność dla powyższych obserwacji możemy zaobserwować kilka faktów: jeśli *width_px* dla pewnego telefonu było powyżej 720, to mało to wpływ pozytywny na cenę, jeśli poniżej to tak jak w obserwacji 362, miało to negatywny wpływ. Ponadto jeśli wysokość ekranu (*height_px*) była mniejsza niż 2400, to również miało to negatywny wpływ. Takie parametry również w rzeczywistości podwyższają cenę telefonu, więc założenie LIME wydaje się być ok.
+
+Podobnie z przekątną, która w naszych obserwacjach jeśli ma wartości powyżej 6.5 to jest pozytywną - jest to rzeczywiste założenie, dużo osób woli większe niż mniejsze przekątne telefonu.
+
+Co ciekawe jeśli *front_camera_mpix* ma wartość większą niż 16 lub mniejszą niż 8 ma negatywny wpływ, a jeśli między 8 a 12 to pozytywny. Jednak to nie wydaje się już być do końca rzeczywistym założeniem.
+
+### Porówananie LIME oraz BreakDown lub SHAP
+
+
+```{r, fig.width=16, fig.height=8}
+#Break Down
+phones2_bd_54 <- predict_parts(explainer,
+                            new_observation = phones2[54,])
+plot(phones2_bd_54)
+```
+
+```{r}
+
+plot(lime_phones54)
+```
+
+```{r}
+
+plot_features(explanation)
+```
+
+Jak widać, pojawiły się pewne różnice między wyjaśnieniami z użyciem LIME oraz BreakDown. Różnice są nawet pomiędzy końcową predykcją, jednak nie są one aż tak znaczne (wartość podana przez Break Down stanowi 100.3% wartości przewiadzianej przez LIME). Większe różnice są natomiast w zmiennych, które LIME oraz BreakDown uznały za najistotniejsze. Dla BreakDown były to szerokość i wysokość ekranu, pamięć ram oraz brand, natomiast dla LIME pokrywały się pamięć ram,  szerokość i wysokość ekranu (w tej kolejności, jak widać innej niż w poprzedmin), jednak zamiast brand pojawiła się nazwa telefonu. Co ciekawe oba narzędzia uznały wartość *back_camera_mpix*=64 za wpływającą negatywnie na predykcję. Przy zmiennej *brand* nie były już takie zgodne - w przeciwieństwie do BreakDown, LIME uznał jej wpływ za negatywny.
+
+
+### Wnioski
+
+Powyższe wnioski zostały stworzone na podstawie dekompozycji predykcji dla konkretnych obserwacji, w szczególności wybranych losowo ze zbioru danych. W związku z tym nie mogą być uznane za podstawę do wysnucia globalnych wniosków dla zbioru. Jednak na początku pracy z globalnymi wyjaśnieniami, będzie można spróbować zasugerować się wynikami, które otrzymaliśmy - z użyciem LIME - okazał się on bardziej stabilny niż ostatnio BreakDown. Jednak nawet jeśli postanowimy sugerować się delikatnie wynikami z LIME, to trzeba je bardzie potwierdzić (lub zaprzeczyć im) przy stworzeniu wyjaśnień globalnych używając odpowiednich do tego narzędzi.

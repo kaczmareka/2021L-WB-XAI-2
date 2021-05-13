@@ -1,0 +1,102 @@
+---
+title: "PD2 XAI"
+author: "Paweł Fijałkowski"
+output: html_document
+---
+
+```{r include=FALSE}
+library(mlr)
+library(ranger)
+library(DALEX)
+library(DALEXtra)
+library(lime)
+```
+
+## Setup
+
+```{r echo = T, results = 'hide'}
+suppressWarnings(library(DALEXtra))
+suppressMessages(library(DALEXtra))
+german_credit <- read.csv("data-credit.csv")
+model <- ranger::ranger(class~., data = german_credit, classification = TRUE, probability = TRUE)
+explainer <- DALEX::explain(model=model, data=german_credit, y=as.numeric(german_credit$class), label='mlr.ranger', colorize=FALSE)
+```
+
+## Predykcja dla obserwacji
+
+```{r}
+record <- german_credit[123,]
+pred <- predict(model, data=record)
+pred$predictions
+german_credit[123,21]
+```
+Predykcja jest więc poprawna.
+
+Następnie wykonamy dekompozycję predykcji modelu przez LIME.
+
+
+## Dekompozycja metodą LIME 
+
+```{r}
+get_lime_explanatation <- function(record){
+  break_down_lime <- predict_surrogate_lime(
+  explainer=explainer, 
+  new_observation=german_credit[record,], 
+  n_features=10, 
+  n_permutations=1000)
+  return(break_down_lime)
+}
+plot(get_lime_explanatation(123))
+```
+
+Analizując wyniki dekompozycji `LIME`, możemy stwierdzić, że jej młody wiek oraz niski stan konta znacząco zmniejszyły p-stwo klasyfikacji do klasy `good`.
+Z drugiej strony, krótki czas trwania kredytu i `checking_status = 'no checking'` zwiększył owo p-stwo.
+
+## Stabilność między obserwacjami
+
+Wykonajmy teraz dekompozycję za pomocą metody LIME dla kilku obserwacji oznaczonych jako `BAD`.
+```{r message=FALSE}
+plot(get_lime_explanatation(2))
+plot(get_lime_explanatation(10))
+plot(get_lime_explanatation(11))
+```
+
+### Wyjaśnienie
+
+Porównując dekompozycję dla wybranych obserwacji, możemy zauważyć, że długi czas trwania kredytu, wysokie zadłużenie i "zachciankowy" cel kredytobiorcy (nowy samochód) znacząco obniżały p-stwo na należenie do grupy `good` (zgadza się to z powszechną intuicją). Te paralele pozwalają nam wnioskować o relatywnej stabilności metody LIME w tej sytuacji.
+
+
+
+Wykonajmy teraz dekompozycję za pomocą metody LIME dla kilku obserwacji oznaczonych jako `GOOD`.
+```{r message=FALSE}
+plot(get_lime_explanatation(27))
+plot(get_lime_explanatation(28))
+plot(get_lime_explanatation(29))
+```
+
+### Wyjaśnienie
+
+W przypadku wszystkich obserwacji widzimy podobny (pozytywny) wpływ krótkiego trwania kredytu i niskiej wartości owego zadłużenia. Podobna zależność zachodzi dla zmiennej wieku (wybrane obserwacje są wykształconymi pracownikami w średnim wieku co znacząco podwyższa p-stwo spłacenia kredytu).
+Do wyjaśnienia jednak pozostaje negatywny wpływ zmiennej `credit_history`, ponieważ pomimo wartości `all_paid`, zmniejsza ona wymienione wyżej p-stwo (w przypadku tych obserwacji).
+
+
+## Lime vs Breakdown
+
+Wróćmy jednak do pierwotnej obserwacji `123` i dla porównania wykonajmy dla niej dekompozycję standardową metodą breakdown
+
+```{r}
+pp123 <- predict_parts(explainer,german_credit[123,])
+plot(pp123)
+```
+
+Porównując oba wyjaśnienia, wnioskujemy, że rodzaj wpływu zmiennych na wartość predykcji (pozytywny/negatywny) jest dla obu wyjaśnień wspólna. 
+Ugruntowywuje nas to w przekonaniu o poprawności tych wyjaśnień i w ogólności cieszy. To co nas "nie cieszy" to istotne róznice w przedstawionych wartościach wpływów tych zmiennych na predykcję. Dla przykładu, według LIME'a `other_payments=None` znacznie zwiększa p-stwo na klasyfikację `good`, podczas gdy Breakdown dla tej zmiennej jest nieznacznie dodatni (+0.023).
+
+Podobne wnioski możemy wysnuć na podstawie zmiennych `age` (tym razem wpływ negatywny) oraz `credit_amount`.
+
+## Podsumowanie
+
+Podsumowując przeprowadzone analizy, nowo poznana metoda dekompozycji - `LIME` (oraz jej porównanie ze "starymi") pozwala nam na lepsze zrozumienie natury predykcji modelu czarnoskrzynkowego (w powyższej pracy - lasu losowego). Na powyższych przykładach obserwujemy jej spójność i względną stabilność oraz wygodę w użyciu. 
+
+
+

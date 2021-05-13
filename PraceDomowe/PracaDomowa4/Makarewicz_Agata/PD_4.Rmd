@@ -1,0 +1,134 @@
+---
+title: "Praca Domowa 3"
+author: "Agata Makarewicz"
+date: "15 04 2021"
+output: 
+  html_document:
+  theme: united
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(DALEX)
+library(DALEXtra)
+library(ranger)
+library(knitr)
+library(lime)
+library(gridExtra)
+library(mlr)
+set.seed(1)
+```
+
+### Wstęp 
+
+Naszym zadaniem będzie analiza wyjaśniająca decyzję modelu uczenia maszynowego (w jaki sposób poszczególne zmienne na nią wpływają). Będą to wyjaśnienia globalne, dla danego modelu, a nie pojedynczych predykcji.
+
+Skorzystamy ze zbioru danych `phones` zawierającego informacje o cechach różnych telefonów dostępnych na rynku. Rozważamy problem regresji (chcemy przewidzieć zmienną `price`) przy wykorzystaniu lasu losowego zaimplementowanego w pakiecie `ranger` (a także innych modeli).
+
+```{r data, echo=FALSE}
+data <- read.csv('C:/Users/agama/Documents/2021L-WB-XAI-2/phones.csv')
+kable(head(data,3), row.names = TRUE)
+```
+
+Zbiór posiada ok. 11% obserwacji z brakującymi wartościami w niektórych kolumnach (`back_camera_mpix`,`front_camera_mpix`), które na potrzeby tego zadania (tworzenia modelu) zostaną uzupełnione zerami (gdyż brak aparatu oznacza w praktyce 0 Mpix). Pominiemy również zmienną `name`, która jest w oczywisty sposób skorelowana ze zmienną `brand` oraz praktycznie unikalna dla każdej obserwacji (328/414 wartości unikalnych po usunięciu braków), oraz zmienne `width_px` i `height_px`, które są silnie ze sobą skorelowane i wyjaśniane przez zmienną `diag`.
+
+```{r missing, echo=FALSE}
+data[is.na(data)] <- 0 
+data <- data[, -c(1, 9, 10)]
+```
+
+### Permutacyjna ważność zmiennych
+
+```{r mlr_task}
+data$brand <- as.factor(data$brand)
+regr_task <- makeRegrTask(data = data, target = 'price')
+```
+
+#### Random forest 
+
+```{r ranger, results=FALSE}
+model_rf <- ranger(price~., data = data, num.trees = 50)
+explainer_rf <- DALEX::explain(model = model_rf, data = data[,-11], y = data$price) 
+```
+
+**Metryki**
+
+```{r ranger_performance, echo=FALSE}
+measures_rf <- data.frame(model_performance(explainer_rf)$measures)
+names(measures_rf) <- c('mse','rmse','r2','mad')
+kable(measures_rf)
+```
+
+**Ważność zmiennych**
+
+```{r plot_rf, echo=FALSE}
+fi_rf <- model_parts(explainer_rf, B = 10)
+plot(fi_rf)
+```
+
+Zastosowany las losowy działa całkiem nieźle - R2 powyżej 0.95 oraz RMSE nieco ponad 300 zł są zadowalające. Najważniejsze zmienne to `ram_gb`, `flash_gb` oraz `front_camera_mpix` lub `brand`, zależnie od przelosowania.
+
+$~$
+
+#### Support Vector Machines
+
+```{r svm, results=FALSE}
+svm_learner <- makeLearner('regr.svm')
+model_svm <- train(svm_learner, regr_task)
+explainer_svm <- DALEX::explain(model = model_svm, data = data[,-11], y = data$price)
+```
+
+**Metryki**
+
+```{r svm_performance, echo=FALSE}
+measures_svm <- data.frame(model_performance(explainer_svm)$measures)
+names(measures_svm) <- c('mse','rmse','r2','mad')
+kable(measures_svm)
+```
+
+**Ważność zmiennych - porównanie z Random forest**
+
+```{r plot_svm, echo=FALSE, fig.height=8}
+fi_svm <- model_parts(explainer_svm, B = 10)
+plot(fi_rf, fi_svm)
+```
+
+SVM wypada nieco gorzej od lasu losowego - 2x wyższe RMSE oraz R2 ok. 0.8 nie są zbyt dobrym wynikiem. Najważniejsze zmienne to (ponownie) `flash_gb`, `brand` oraz `ram_gb`, choć tym razem w kwestii istotności zdecydowanie dominują one nad pozostałymi zmiennymi.
+
+$~$
+
+#### Gradient Boosting Machine
+
+```{r xgboost, results=FALSE}
+xgb_learner <- makeLearner('regr.gbm')
+model_gbm <- train(xgb_learner, regr_task)
+explainer_gbm <- DALEX::explain(model = model_gbm, data = data[,-11], y = data$price)
+```
+
+**Metryki**
+
+```{r gbm_performance, echo=FALSE}
+measures_gbm <- data.frame(model_performance(explainer_gbm)$measures)
+names(measures_gbm) <- c('mse','rmse','r2','mad')
+kable(measures_gbm)
+```
+
+**Ważność zmiennych - porównanie z Random forest**
+
+```{r plot_gbm, echo=FALSE, fig.height=8}
+fi_gbm <- model_parts(explainer_gbm, B = 10)
+plot(fi_rf, fi_gbm)
+```
+
+GBM również wypada nieco gorzej od lasu losowego, metryki są bardzo zbliżone do tych dla SVM. Tutaj również najważniejsze zmienne to `flash_gb`, `brand` oraz `ram_gb`, i znów dominują one nad pozostałymi zmiennymi.
+
+$~$
+
+### Wnioski
+
+* Dla lasu losowego możemy w zasadzie wyróżnić 4 najważniejsze zmienne: `ram_gb`, `flash_gb`, `brand` oraz `front_camera_mpix`. W zależności od przelosowania `brand` i `front_camera_mpix` zamieniają się miejscami, pierwsze 2 pozostają na czele. Jednak wszystkie 4 zmienne są bardzo zbliżone w kontekście istotności i nieznacznie, ale odróżniają się od pozostałych zmiennych, co oznacza, że znacznie bardziej wpływają na cenę telefonu.
+* Dla modeli SVM oraz GBM otrzymujemy stale te same 3 najważniejsze zmienne - `ram_gb`, `flash_gb` oraz `brand`, przy czym są one dużo ważniejsze od pozostałych (w przypadku lasu losowego te różnice nie są aż tak wyraźne).
+* Las losowy działa o wiele lepiej niż SVM oraz GBM (o 0.15 lepszy w R2, 2x lepszy w RMSE) (oczywiście bez strojenia modeli).
+* Obserwacje pokrywają się z wnioskami wyciągniętymi z wyjaśnień lokalnych - dla pojedynczych predykcji te zmienne zazwyczaj były bardzo istotne i miały spory wpływ na cenę telefonu.
+
+$~$
